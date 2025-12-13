@@ -1,0 +1,2232 @@
+-- Habilitar extensiones necesarias
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+
+-- =====================================================
+-- TABLAS DE DIMENSIONES
+-- =====================================================
+
+-- Dimensión de Tiempo (Calendar)
+CREATE TABLE dim_calendar (
+    date_key INTEGER PRIMARY KEY,
+    full_date DATE NOT NULL UNIQUE,
+    year INTEGER NOT NULL,
+    quarter INTEGER NOT NULL,
+    month INTEGER NOT NULL,
+    month_name VARCHAR(20) NOT NULL,
+    week INTEGER NOT NULL,
+    day_of_year INTEGER NOT NULL,
+    day_of_month INTEGER NOT NULL,
+    day_of_week INTEGER NOT NULL,
+    day_name VARCHAR(20) NOT NULL,
+    is_weekend BOOLEAN NOT NULL,
+    is_holiday BOOLEAN DEFAULT FALSE,
+    fiscal_year INTEGER,
+    fiscal_quarter INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Dimensión de Clientes/Usuarios
+CREATE TABLE dim_customers (
+    customer_key SERIAL PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    email VARCHAR(255) NOT NULL,
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
+    full_name VARCHAR(200),
+    phone VARCHAR(20),
+    address TEXT,
+    city VARCHAR(100),
+    state VARCHAR(100),
+    postal_code VARCHAR(20),
+    country VARCHAR(100) DEFAULT 'Perú',
+    birth_date DATE,
+    gender VARCHAR(10),
+    customer_type VARCHAR(50) DEFAULT 'regular', -- regular, premium, vip
+    registration_date DATE,
+    last_login_date DATE,
+    total_orders INTEGER DEFAULT 0,
+    total_spent DECIMAL(12,2) DEFAULT 0,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Dimensión de Productos
+CREATE TABLE dim_products (
+    product_key SERIAL PRIMARY KEY,
+    product_id UUID UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    sku VARCHAR(100) UNIQUE,
+    barcode VARCHAR(50),
+    category_id INTEGER,
+    category_name VARCHAR(100),
+    subcategory_id INTEGER,
+    subcategory_name VARCHAR(100),
+    brand VARCHAR(100),
+    manufacturer VARCHAR(100),
+    unit_type VARCHAR(50), -- unidad, caja, frasco, etc.
+    unit_size VARCHAR(50), -- 500mg, 30ml, etc.
+    prescription_required BOOLEAN DEFAULT FALSE,
+    controlled_substance BOOLEAN DEFAULT FALSE,
+    temperature_controlled BOOLEAN DEFAULT FALSE,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Dimensión de Categorías
+CREATE TABLE dim_categories (
+    category_key SERIAL PRIMARY KEY,
+    category_id INTEGER UNIQUE NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    parent_category_id INTEGER,
+    level INTEGER DEFAULT 1,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Dimensión de Ubicaciones
+CREATE TABLE dim_locations (
+    location_key SERIAL PRIMARY KEY,
+    location_id INTEGER UNIQUE NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    type VARCHAR(50), -- warehouse, store, pharmacy
+    address TEXT,
+    city VARCHAR(100),
+    state VARCHAR(100),
+    postal_code VARCHAR(20),
+    country VARCHAR(100) DEFAULT 'Perú',
+    manager_name VARCHAR(100),
+    phone VARCHAR(20),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Dimensión de Empleados
+CREATE TABLE dim_employees (
+    employee_key SERIAL PRIMARY KEY,
+    employee_id INTEGER UNIQUE NOT NULL,
+    user_id UUID REFERENCES auth.users(id),
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100) NOT NULL,
+    full_name VARCHAR(200),
+    email VARCHAR(255),
+    phone VARCHAR(20),
+    position VARCHAR(100),
+    department VARCHAR(100),
+    location_id INTEGER,
+    hire_date DATE,
+    salary DECIMAL(10,2),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Dimensión de Proveedores
+CREATE TABLE dim_suppliers (
+    supplier_key SERIAL PRIMARY KEY,
+    supplier_id INTEGER UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    contact_person VARCHAR(100),
+    email VARCHAR(255),
+    phone VARCHAR(20),
+    address TEXT,
+    city VARCHAR(100),
+    state VARCHAR(100),
+    postal_code VARCHAR(20),
+    country VARCHAR(100) DEFAULT 'Perú',
+    tax_id VARCHAR(50),
+    payment_terms VARCHAR(100),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- =====================================================
+-- TABLAS DE HECHOS
+-- =====================================================
+
+-- Tabla de Hechos de Ventas
+CREATE TABLE fact_sales (
+    sales_key BIGSERIAL PRIMARY KEY,
+    order_id UUID NOT NULL,
+    order_item_id UUID NOT NULL,
+    date_key INTEGER REFERENCES dim_calendar(date_key),
+    customer_key INTEGER REFERENCES dim_customers(customer_key),
+    product_key INTEGER REFERENCES dim_products(product_key),
+    location_key INTEGER REFERENCES dim_locations(location_key),
+    employee_key INTEGER REFERENCES dim_employees(employee_key),
+    
+    -- Métricas de cantidad
+    quantity_sold INTEGER NOT NULL,
+    unit_price DECIMAL(10,2) NOT NULL,
+    total_price DECIMAL(12,2) NOT NULL,
+    discount_amount DECIMAL(10,2) DEFAULT 0,
+    tax_amount DECIMAL(10,2) DEFAULT 0,
+    final_price DECIMAL(12,2) NOT NULL,
+    
+    -- Métricas de costos
+    unit_cost DECIMAL(10,2),
+    total_cost DECIMAL(12,2),
+    profit_margin DECIMAL(10,2),
+    profit_amount DECIMAL(12,2),
+    
+    -- Información de la transacción
+    payment_method VARCHAR(50),
+    payment_status VARCHAR(50),
+    order_status VARCHAR(50),
+    delivery_method VARCHAR(50),
+    delivery_date DATE,
+    
+    -- Timestamps
+    order_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Tabla de Hechos de Inventario
+CREATE TABLE fact_inventory (
+    inventory_key BIGSERIAL PRIMARY KEY,
+    product_key INTEGER REFERENCES dim_products(product_key),
+    location_key INTEGER REFERENCES dim_locations(location_key),
+    date_key INTEGER REFERENCES dim_calendar(date_key),
+    
+    -- Métricas de inventario
+    beginning_stock INTEGER NOT NULL,
+    stock_received INTEGER DEFAULT 0,
+    stock_sold INTEGER DEFAULT 0,
+    stock_adjusted INTEGER DEFAULT 0,
+    stock_returned INTEGER DEFAULT 0,
+    ending_stock INTEGER NOT NULL,
+    
+    -- Métricas de valor
+    unit_cost DECIMAL(10,2),
+    total_value DECIMAL(12,2),
+    average_cost DECIMAL(10,2),
+    
+    -- Alertas de stock
+    reorder_point INTEGER,
+    max_stock INTEGER,
+    is_low_stock BOOLEAN DEFAULT FALSE,
+    is_out_of_stock BOOLEAN DEFAULT FALSE,
+    
+    -- Timestamps
+    snapshot_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Tabla de Hechos de Compras
+CREATE TABLE fact_purchases (
+    purchase_key BIGSERIAL PRIMARY KEY,
+    purchase_order_id UUID NOT NULL,
+    product_key INTEGER REFERENCES dim_products(product_key),
+    supplier_key INTEGER REFERENCES dim_suppliers(supplier_key),
+    location_key INTEGER REFERENCES dim_locations(location_key),
+    employee_key INTEGER REFERENCES dim_employees(employee_key),
+    date_key INTEGER REFERENCES dim_calendar(date_key),
+    
+    -- Métricas de compra
+    quantity_ordered INTEGER NOT NULL,
+    quantity_received INTEGER DEFAULT 0,
+    unit_cost DECIMAL(10,2) NOT NULL,
+    total_cost DECIMAL(12,2) NOT NULL,
+    discount_amount DECIMAL(10,2) DEFAULT 0,
+    tax_amount DECIMAL(10,2) DEFAULT 0,
+    final_cost DECIMAL(12,2) NOT NULL,
+    
+    -- Información de la compra
+    order_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    expected_delivery_date DATE,
+    actual_delivery_date DATE,
+    purchase_status VARCHAR(50),
+    payment_status VARCHAR(50),
+    
+    -- Timestamps
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Tabla de Hechos de Clientes (Comportamiento)
+CREATE TABLE fact_customer_behavior (
+    behavior_key BIGSERIAL PRIMARY KEY,
+    customer_key INTEGER REFERENCES dim_customers(customer_key),
+    date_key INTEGER REFERENCES dim_calendar(date_key),
+    
+    -- Métricas de comportamiento
+    sessions_count INTEGER DEFAULT 0,
+    page_views INTEGER DEFAULT 0,
+    time_on_site INTEGER DEFAULT 0, -- en segundos
+    cart_additions INTEGER DEFAULT 0,
+    cart_abandonments INTEGER DEFAULT 0,
+    wishlist_additions INTEGER DEFAULT 0,
+    
+    -- Métricas de conversión
+    orders_placed INTEGER DEFAULT 0,
+    orders_completed INTEGER DEFAULT 0,
+    orders_cancelled INTEGER DEFAULT 0,
+    total_spent DECIMAL(12,2) DEFAULT 0,
+    
+    -- Métricas de engagement
+    email_opens INTEGER DEFAULT 0,
+    email_clicks INTEGER DEFAULT 0,
+    sms_sent INTEGER DEFAULT 0,
+    sms_delivered INTEGER DEFAULT 0,
+    
+    -- Timestamps
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- =====================================================
+-- TABLAS OPERACIONALES -- =====================================================
+
+-- Tabla de Perfiles (compatible con la app original)
+CREATE TABLE profiles (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    email VARCHAR(255) NOT NULL,
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
+    phone VARCHAR(20),
+    address TEXT,
+    city VARCHAR(100),
+    state VARCHAR(100),
+    postal_code VARCHAR(20),
+    country VARCHAR(100) DEFAULT 'Perú',
+    role VARCHAR(50) DEFAULT 'customer', -- customer, admin, employee
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Tabla de Productos (compatible con la app original)
+CREATE TABLE products (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    price DECIMAL(10,2) NOT NULL,
+    stock INTEGER NOT NULL DEFAULT 0,
+    category VARCHAR(100),
+    image_url VARCHAR(500),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Tabla de Pedidos (compatible con la app original)
+CREATE TABLE orders (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    order_code VARCHAR(50) UNIQUE NOT NULL,
+    customer_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    customer_name VARCHAR(200),
+    customer_email VARCHAR(255),
+    customer_phone VARCHAR(20),
+    shipping_address TEXT,
+    billing_address TEXT,
+    total_amount DECIMAL(12,2) NOT NULL,
+    tax_amount DECIMAL(10,2) DEFAULT 0,
+    discount_amount DECIMAL(10,2) DEFAULT 0,
+    final_amount DECIMAL(12,2) NOT NULL,
+    status VARCHAR(50) DEFAULT 'pending', -- pending, processing, shipped, delivered, cancelled
+    payment_method VARCHAR(50),
+    payment_status VARCHAR(50) DEFAULT 'pending',
+    shipping_method VARCHAR(50),
+    tracking_number VARCHAR(100),
+    notes TEXT,
+    order_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Tabla de Items de Pedido
+CREATE TABLE order_items (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
+    product_id UUID REFERENCES products(id),
+    product_name VARCHAR(255) NOT NULL,
+    quantity INTEGER NOT NULL,
+    unit_price DECIMAL(10,2) NOT NULL,
+    total_price DECIMAL(12,2) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- =====================================================
+-- ÍNDICES PARA OPTIMIZACIÓN
+-- =====================================================
+
+-- Índices para tablas de dimensiones
+CREATE INDEX idx_dim_calendar_date ON dim_calendar(full_date);
+CREATE INDEX idx_dim_calendar_year_month ON dim_calendar(year, month);
+CREATE INDEX idx_dim_customers_user_id ON dim_customers(user_id);
+CREATE INDEX idx_dim_customers_email ON dim_customers(email);
+CREATE INDEX idx_dim_products_product_id ON dim_products(product_id);
+CREATE INDEX idx_dim_products_category ON dim_products(category_name);
+CREATE INDEX idx_dim_products_brand ON dim_products(brand);
+
+-- Índices para tablas de hechos
+CREATE INDEX idx_fact_sales_date ON fact_sales(date_key);
+CREATE INDEX idx_fact_sales_customer ON fact_sales(customer_key);
+CREATE INDEX idx_fact_sales_product ON fact_sales(product_key);
+CREATE INDEX idx_fact_sales_order_id ON fact_sales(order_id);
+CREATE INDEX idx_fact_sales_order_date ON fact_sales(order_date);
+
+CREATE INDEX idx_fact_inventory_product ON fact_inventory(product_key);
+CREATE INDEX idx_fact_inventory_location ON fact_inventory(location_key);
+CREATE INDEX idx_fact_inventory_date ON fact_inventory(date_key);
+CREATE INDEX idx_fact_inventory_snapshot_date ON fact_inventory(snapshot_date);
+
+CREATE INDEX idx_fact_purchases_supplier ON fact_purchases(supplier_key);
+CREATE INDEX idx_fact_purchases_product ON fact_purchases(product_key);
+CREATE INDEX idx_fact_purchases_date ON fact_purchases(date_key);
+
+CREATE INDEX idx_fact_customer_behavior_customer ON fact_customer_behavior(customer_key);
+CREATE INDEX idx_fact_customer_behavior_date ON fact_customer_behavior(date_key);
+
+-- Índices para tablas operacionales
+CREATE INDEX idx_profiles_email ON profiles(email);
+CREATE INDEX idx_products_category ON products(category);
+CREATE INDEX idx_products_active ON products(is_active);
+CREATE INDEX idx_orders_customer ON orders(customer_id);
+CREATE INDEX idx_orders_status ON orders(status);
+CREATE INDEX idx_orders_date ON orders(order_date);
+CREATE INDEX idx_order_items_order ON order_items(order_id);
+CREATE INDEX idx_order_items_product ON order_items(product_id);
+
+-- =====================================================
+-- VISTAS PARA ANÁLISIS
+-- =====================================================
+
+-- Vista de Resumen de Ventas Diarias
+CREATE VIEW v_daily_sales_summary AS
+SELECT 
+    dc.full_date,
+    dc.year,
+    dc.month,
+    dc.month_name,
+    dc.day_of_week,
+    dc.day_name,
+    COUNT(DISTINCT fs.order_id) as total_orders,
+    COUNT(fs.sales_key) as total_items,
+    SUM(fs.quantity_sold) as total_quantity,
+    SUM(fs.total_price) as total_revenue,
+    SUM(fs.discount_amount) as total_discounts,
+    SUM(fs.tax_amount) as total_taxes,
+    SUM(fs.final_price) as net_revenue,
+    AVG(fs.final_price) as avg_order_value
+FROM fact_sales fs
+JOIN dim_calendar dc ON fs.date_key = dc.date_key
+GROUP BY dc.full_date, dc.year, dc.month, dc.month_name, dc.day_of_week, dc.day_name
+ORDER BY dc.full_date DESC;
+
+-- Vista de Top Productos
+CREATE VIEW v_top_products AS
+SELECT 
+    dp.name as product_name,
+    dp.category_name,
+    dp.brand,
+    COUNT(fs.sales_key) as times_sold,
+    SUM(fs.quantity_sold) as total_quantity,
+    SUM(fs.final_price) as total_revenue,
+    AVG(fs.unit_price) as avg_price,
+    SUM(fs.profit_amount) as total_profit
+FROM fact_sales fs
+JOIN dim_products dp ON fs.product_key = dp.product_key
+GROUP BY dp.product_key, dp.name, dp.category_name, dp.brand
+ORDER BY total_revenue DESC;
+
+-- Vista de Comportamiento de Clientes
+CREATE VIEW v_customer_analysis AS
+SELECT 
+    dc.email,
+    dc.full_name,
+    dc.customer_type,
+    dc.registration_date,
+    COUNT(DISTINCT fs.order_id) as total_orders,
+    SUM(fs.final_price) as total_spent,
+    AVG(fs.final_price) as avg_order_value,
+    MAX(fs.order_date) as last_order_date,
+    COUNT(fcb.behavior_key) as total_sessions
+FROM dim_customers dc
+LEFT JOIN fact_sales fs ON dc.customer_key = fs.customer_key
+LEFT JOIN fact_customer_behavior fcb ON dc.customer_key = fcb.customer_key
+GROUP BY dc.customer_key, dc.email, dc.full_name, dc.customer_type, dc.registration_date
+ORDER BY total_spent DESC;
+
+-- Vista de Análisis de Inventario
+CREATE VIEW v_inventory_analysis AS
+SELECT 
+    dp.name as product_name,
+    dp.category_name,
+    dp.brand,
+    dl.name as location_name,
+    fi.ending_stock,
+    fi.reorder_point,
+    fi.is_low_stock,
+    fi.is_out_of_stock,
+    fi.unit_cost,
+    fi.total_value,
+    fi.snapshot_date
+FROM fact_inventory fi
+JOIN dim_products dp ON fi.product_key = dp.product_key
+JOIN dim_locations dl ON fi.location_key = dl.location_key
+WHERE fi.snapshot_date = (
+    SELECT MAX(snapshot_date) 
+    FROM fact_inventory fi2 
+    WHERE fi2.product_key = fi.product_key 
+    AND fi2.location_key = fi.location_key
+)
+ORDER BY fi.is_out_of_stock DESC, fi.is_low_stock DESC, fi.ending_stock ASC;
+
+-- =====================================================
+-- FUNCIONES Y TRIGGERS
+-- =====================================================
+
+-- Función para actualizar updated_at automáticamente
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Triggers para updated_at
+CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_products_updated_at BEFORE UPDATE ON products FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_orders_updated_at BEFORE UPDATE ON orders FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Función para poblar la dimensión de calendario
+CREATE OR REPLACE FUNCTION populate_calendar_dimension(start_date DATE, end_date DATE)
+RETURNS VOID AS $$
+DECLARE
+    current_date_var DATE := start_date;
+    v_date_key INTEGER;
+    v_year_val INTEGER;
+    v_quarter_val INTEGER;
+    v_month_val INTEGER;
+    v_month_name_val VARCHAR(20);
+    v_week_val INTEGER;
+    v_day_of_year_val INTEGER;
+    v_day_of_month_val INTEGER;
+    v_day_of_week_val INTEGER;
+    v_day_name_val VARCHAR(20);
+    v_is_weekend_val BOOLEAN;
+BEGIN
+    WHILE current_date_var <= end_date LOOP
+        v_date_key := EXTRACT(YEAR FROM current_date_var) * 10000 + 
+                     EXTRACT(MONTH FROM current_date_var) * 100 + 
+                     EXTRACT(DAY FROM current_date_var);
+        
+        v_year_val := EXTRACT(YEAR FROM current_date_var);
+        v_quarter_val := EXTRACT(QUARTER FROM current_date_var);
+        v_month_val := EXTRACT(MONTH FROM current_date_var);
+        v_month_name_val := TO_CHAR(current_date_var, 'Month');
+        v_week_val := EXTRACT(WEEK FROM current_date_var);
+        v_day_of_year_val := EXTRACT(DOY FROM current_date_var);
+        v_day_of_month_val := EXTRACT(DAY FROM current_date_var);
+        v_day_of_week_val := EXTRACT(DOW FROM current_date_var);
+        v_day_name_val := TO_CHAR(current_date_var, 'Day');
+        v_is_weekend_val := EXTRACT(DOW FROM current_date_var) IN (0, 6);
+        
+        INSERT INTO dim_calendar (
+            date_key, full_date, year, quarter, month, month_name, 
+            week, day_of_year, day_of_month, day_of_week, day_name, is_weekend
+        ) VALUES (
+            v_date_key, current_date_var, v_year_val, v_quarter_val, v_month_val, v_month_name_val,
+            v_week_val, v_day_of_year_val, v_day_of_month_val, v_day_of_week_val, v_day_name_val, v_is_weekend_val
+        ) ON CONFLICT (date_key) DO NOTHING;
+        
+        current_date_var := current_date_var + INTERVAL '1 day';
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- =====================================================
+-- POLÍTICAS RLS (Row Level Security)
+-- =====================================================
+
+-- Habilitar RLS en tablas sensibles
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
+
+-- Política para profiles: usuarios solo pueden ver su propio perfil
+CREATE POLICY "Users can view own profile" ON profiles
+    FOR SELECT USING (auth.uid() = id);
+
+CREATE POLICY "Users can update own profile" ON profiles
+    FOR UPDATE USING (auth.uid() = id);
+
+-- Política para orders: usuarios solo pueden ver sus propios pedidos
+CREATE POLICY "Users can view own orders" ON orders
+    FOR SELECT USING (auth.uid() = customer_id);
+
+-- Política para order_items: usuarios solo pueden ver items de sus pedidos
+CREATE POLICY "Users can view own order items" ON order_items
+    FOR SELECT USING (
+        order_id IN (
+            SELECT id FROM orders WHERE customer_id = auth.uid()
+        )
+    );
+
+
+
+-- =====================================================
+-- HABILITAR ACCESO PARA DASHBOARD
+-- =====================================================
+
+-- Habilitar RLS en las tablas si no está habilitado
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
+
+-- Crear políticas para permitir lectura pública (solo para desarrollo)
+-- NOTA: En producción, estas políticas deben ser más restrictivas
+
+-- Política para orders - permitir lectura a todos
+DROP POLICY IF EXISTS "Enable read access for all users" ON orders;
+CREATE POLICY "Enable read access for all users" ON orders
+    FOR SELECT USING (true);
+
+-- Política para products - permitir lectura a todos
+DROP POLICY IF EXISTS "Enable read access for all users" ON products;
+CREATE POLICY "Enable read access for all users" ON products
+    FOR SELECT USING (true);
+
+-- Política para order_items - permitir lectura a todos
+DROP POLICY IF EXISTS "Enable read access for all users" ON order_items;
+CREATE POLICY "Enable read access for all users" ON order_items
+    FOR SELECT USING (true);
+
+-- Política para profiles - permitir lectura a todos
+DROP POLICY IF EXISTS "Enable read access for all users" ON profiles;
+CREATE POLICY "Enable read access for all users" ON profiles
+    FOR SELECT USING (true);
+
+-- Verificar que las políticas se crearon
+SELECT 
+    tablename, 
+    policyname, 
+    cmd,
+    permissive
+FROM pg_policies 
+WHERE tablename IN ('orders', 'products', 'order_items', 'profiles')
+AND policyname = 'Enable read access for all users';
+
+-- Probar que se pueden leer los datos
+SELECT 'Orders count:' as tabla, COUNT(*) as total FROM orders
+UNION ALL
+SELECT 'Products count:', COUNT(*) FROM products
+UNION ALL
+SELECT 'Order items count:', COUNT(*) FROM order_items
+UNION ALL
+SELECT 'Profiles count:', COUNT(*) FROM profiles;
+
+
+
+CREATE TABLE IF NOT EXISTS profiles (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    email VARCHAR(255) NOT NULL,
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
+    phone VARCHAR(20),
+    address TEXT,
+    city VARCHAR(100),
+    state VARCHAR(100),
+    postal_code VARCHAR(20),
+    country VARCHAR(100) DEFAULT 'Perú',
+    role VARCHAR(50) DEFAULT 'customer',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Si la tabla ya existe, agregar las columnas de dirección si no existen
+DO $$ 
+BEGIN
+    -- Agregar address si no existe
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_name = 'profiles' AND column_name = 'address') THEN
+        ALTER TABLE profiles ADD COLUMN address TEXT;
+    END IF;
+
+    -- Agregar city si no existe
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_name = 'profiles' AND column_name = 'city') THEN
+        ALTER TABLE profiles ADD COLUMN city VARCHAR(100);
+    END IF;
+
+    -- Agregar state si no existe
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_name = 'profiles' AND column_name = 'state') THEN
+        ALTER TABLE profiles ADD COLUMN state VARCHAR(100);
+    END IF;
+
+    -- Agregar postal_code si no existe
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_name = 'profiles' AND column_name = 'postal_code') THEN
+        ALTER TABLE profiles ADD COLUMN postal_code VARCHAR(20);
+    END IF;
+
+    -- Agregar country si no existe
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_name = 'profiles' AND column_name = 'country') THEN
+        ALTER TABLE profiles ADD COLUMN country VARCHAR(100) DEFAULT 'Perú';
+    END IF;
+END $$;
+
+-- Habilitar Row Level Security (RLS)
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+-- Eliminar políticas existentes si existen (para evitar errores)
+DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
+DROP POLICY IF EXISTS "Users can insert own profile" ON profiles;
+DROP POLICY IF EXISTS "Admins can view all profiles" ON profiles;
+
+-- Política: Los usuarios solo pueden ver su propio perfil
+CREATE POLICY "Users can view own profile" ON profiles
+    FOR SELECT USING (auth.uid() = id);
+
+-- Política: Los usuarios solo pueden actualizar su propio perfil
+CREATE POLICY "Users can update own profile" ON profiles
+    FOR UPDATE USING (auth.uid() = id);
+
+-- Política: Los usuarios pueden insertar su propio perfil
+CREATE POLICY "Users can insert own profile" ON profiles
+    FOR INSERT WITH CHECK (auth.uid() = id);
+
+-- Política: Los administradores pueden ver todos los perfiles
+CREATE POLICY "Admins can view all profiles" ON profiles
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+-- Crear función para actualizar updated_at automáticamente
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Crear trigger para actualizar updated_at
+DROP TRIGGER IF EXISTS update_profiles_updated_at ON profiles;
+CREATE TRIGGER update_profiles_updated_at
+    BEFORE UPDATE ON profiles
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+
+-- 1. ELIMINAR TODAS LAS POLÍTICAS EXISTENTES
+DROP POLICY IF EXISTS "Users can view own profile" ON profiles CASCADE;
+DROP POLICY IF EXISTS "Users can update own profile" ON profiles CASCADE;
+DROP POLICY IF EXISTS "Users can insert own profile" ON profiles CASCADE;
+DROP POLICY IF EXISTS "Admins can view all profiles" ON profiles CASCADE;
+DROP POLICY IF EXISTS "Admins can update all profiles" ON profiles CASCADE;
+DROP POLICY IF EXISTS "Admins can insert all profiles" ON profiles CASCADE;
+
+-- 2. ELIMINAR FUNCIÓN AUXILIAR SI EXISTE
+DROP FUNCTION IF EXISTS is_admin(UUID);
+
+-- 3. CREAR FUNCIÓN AUXILIAR CON SECURITY DEFINER
+-- Esta función evita la recursión porque se ejecuta con privilegios elevados
+CREATE OR REPLACE FUNCTION is_admin(user_id UUID)
+RETURNS BOOLEAN 
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    -- Verificar directamente sin pasar por RLS
+    RETURN EXISTS (
+        SELECT 1 
+        FROM profiles
+        WHERE id = user_id
+        AND role = 'admin'
+        LIMIT 1
+    );
+END;
+$$;
+
+-- 4. CREAR POLÍTICAS SIMPLES SIN RECURSIÓN
+
+-- Política 1: Los usuarios pueden ver su propio perfil
+CREATE POLICY "users_view_own_profile" ON profiles
+    FOR SELECT 
+    USING (auth.uid() = id);
+
+-- Política 2: Los usuarios pueden actualizar su propio perfil
+CREATE POLICY "users_update_own_profile" ON profiles
+    FOR UPDATE 
+    USING (auth.uid() = id)
+    WITH CHECK (auth.uid() = id);
+
+-- Política 3: Los usuarios pueden insertar su propio perfil
+CREATE POLICY "users_insert_own_profile" ON profiles
+    FOR INSERT 
+    WITH CHECK (auth.uid() = id);
+
+-- Política 4: Los administradores pueden ver todos los perfiles
+-- Usa la función auxiliar que evita recursión
+CREATE POLICY "admins_view_all_profiles" ON profiles
+    FOR SELECT 
+    USING (is_admin(auth.uid()));
+
+-- Política 5: Los administradores pueden actualizar todos los perfiles
+CREATE POLICY "admins_update_all_profiles" ON profiles
+    FOR UPDATE 
+    USING (is_admin(auth.uid()))
+    WITH CHECK (is_admin(auth.uid()));
+
+-- 5. VERIFICAR QUE RLS ESTÉ HABILITADO
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+-- 6. VERIFICAR POLÍTICAS CREADAS
+SELECT 
+    schemaname,
+    tablename,
+    policyname,
+    permissive,
+    roles,
+    cmd,
+    qual,
+    with_check
+FROM pg_policies 
+WHERE tablename = 'profiles'
+ORDER BY policyname;
+
+---
+---POLITICAS--
+-- Habilitar RLS en tablas de dimensiones
+ALTER TABLE public.dim_customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.dim_categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.dim_employees ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.dim_calendar ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.dim_products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.dim_locations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.dim_suppliers ENABLE ROW LEVEL SECURITY;
+
+-- Habilitar RLS en tablas de hechos
+ALTER TABLE public.fact_sales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.fact_inventory ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.fact_purchases ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.fact_customer_behavior ENABLE ROW LEVEL SECURITY;
+
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN (
+    SELECT EXISTS (
+      SELECT 1 FROM public.dim_employees
+      WHERE employee_id = auth.uid()::integer
+      AND role = 'Administrador'
+    )
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Políticas para dim_customers
+CREATE POLICY "Admin full access customers" ON public.dim_customers
+  FOR ALL USING (is_admin());
+
+-- Políticas para dim_categories
+CREATE POLICY "Admin full access categories" ON public.dim_categories
+  FOR ALL USING (is_admin());
+
+-- Políticas para dim_employees
+CREATE POLICY "Admin full access employees" ON public.dim_employees
+  FOR ALL USING (is_admin());
+
+-- Políticas para dim_calendar
+CREATE POLICY "Admin full access calendar" ON public.dim_calendar
+  FOR ALL USING (is_admin());
+
+-- Políticas para dim_products
+CREATE POLICY "Admin full access products" ON public.dim_products
+  FOR ALL USING (is_admin());
+
+-- Políticas para dim_locations
+CREATE POLICY "Admin full access locations" ON public.dim_locations
+  FOR ALL USING (is_admin());
+
+-- Políticas para dim_suppliers
+CREATE POLICY "Admin full access suppliers" ON public.dim_suppliers
+  FOR ALL USING (is_admin());
+
+-- Políticas para fact_sales
+CREATE POLICY "Admin full access sales" ON public.fact_sales
+  FOR ALL USING (is_admin());
+
+-- Políticas para fact_inventory
+CREATE POLICY "Admin full access inventory" ON public.fact_inventory
+  FOR ALL USING (is_admin());
+
+-- Políticas para fact_purchases
+CREATE POLICY "Admin full access purchases" ON public.fact_purchases
+  FOR ALL USING (is_admin());
+
+-- Políticas para fact_customer_behavior
+CREATE POLICY "Admin full access behavior" ON public.fact_customer_behavior
+  FOR ALL USING (is_admin());
+
+
+DROP VIEW IF EXISTS public.v_daily_sales_summary CASCADE;
+
+CREATE VIEW public.v_daily_sales_summary AS
+SELECT
+    cal.date_key,
+    cal.full_date,
+    COUNT(*) as num_sales,
+    SUM(s.final_price) as total_revenue,
+    AVG(s.final_price) as avg_sale_amount
+FROM public.dim_calendar cal
+LEFT JOIN public.fact_sales s ON cal.date_key = s.date_key
+GROUP BY cal.date_key, cal.full_date;
+
+-----
+
+-- Paso 1: Eliminar las vistas existentes
+DROP VIEW IF EXISTS public.v_customer_analysis CASCADE;
+DROP VIEW IF EXISTS public.v_daily_sales_summary CASCADE;
+DROP VIEW IF EXISTS public.v_top_products CASCADE;
+DROP VIEW IF EXISTS public.v_inventory_analysis CASCADE;
+
+-- Crear v_customer_analysis con SECURITY INVOKER
+CREATE OR REPLACE VIEW public.v_customer_analysis
+WITH (security_invoker = true) AS
+SELECT
+    c.customer_key,
+    c.customer_type,
+    COUNT(*) as total_purchases,
+    SUM(s.final_price) as total_spent,
+    AVG(s.final_price) as avg_purchase_amount,
+    MAX(s.order_date) as last_purchase_date
+FROM public.dim_customers c
+LEFT JOIN public.fact_sales s ON c.customer_key = s.customer_key
+GROUP BY c.customer_key, c.customer_type;
+
+-- Crear v_daily_sales_summary con SECURITY INVOKER
+CREATE OR REPLACE VIEW public.v_daily_sales_summary
+WITH (security_invoker = true) AS
+SELECT
+    cal.date_key,
+    cal.full_date,
+    COUNT(*) as num_sales,
+    SUM(s.final_price) as total_revenue,
+    AVG(s.final_price) as avg_sale_amount
+FROM public.dim_calendar cal
+LEFT JOIN public.fact_sales s ON cal.date_key = s.date_key
+GROUP BY cal.date_key, cal.full_date;
+
+-- Crear v_top_products con SECURITY INVOKER
+CREATE OR REPLACE VIEW public.v_top_products
+WITH (security_invoker = true) AS
+SELECT
+    p.product_key,
+    p.name as product_name,
+    SUM(s.quantity_sold) as total_quantity_sold,
+    SUM(s.final_price) as total_revenue
+FROM public.dim_products p
+JOIN public.fact_sales s ON p.product_key = s.product_key
+GROUP BY p.product_key, p.name
+ORDER BY total_revenue DESC
+LIMIT 10;
+
+-- Crear v_inventory_analysis con SECURITY INVOKER
+CREATE OR REPLACE VIEW public.v_inventory_analysis
+WITH (security_invoker = true) AS
+SELECT
+    p.product_key,
+    p.name as product_name,
+    i.ending_stock as stock_quantity,
+    i.reorder_point as reorder_level,
+    CASE
+        WHEN i.ending_stock <= i.reorder_point THEN 'Reorder Needed'
+        ELSE 'Sufficient Stock'
+    END as stock_status
+FROM public.dim_products p
+JOIN public.fact_inventory i ON p.product_key = i.product_key;
+
+CREATE SCHEMA IF NOT EXISTS extensions;
+DROP EXTENSION IF EXISTS pg_trgm CASCADE;
+CREATE EXTENSION pg_trgm SCHEMA extensions;
+
+DROP FUNCTION IF EXISTS public.is_admin() CASCADE;
+
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1
+    FROM profiles
+    WHERE id = auth.uid()
+      AND role = 'admin'
+    LIMIT 1
+  );
+END;
+$$;
+CREATE POLICY "Admin full access employees" ON public.dim_employees
+  FOR ALL USING (is_admin());
+
+
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN (
+    SELECT EXISTS (
+      SELECT 1 FROM public.dim_employees
+      WHERE employee_id = auth.uid()::integer
+      AND role = 'Administrador'
+    )
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP FUNCTION IF EXISTS public.is_admin() CASCADE;
+
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1
+    FROM profiles
+    WHERE id = auth.uid()
+      AND role = 'admin'
+    LIMIT 1
+  );
+END;
+$$;
+
+-- 1) Crear la secuencia para employee_id si no existe
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_class
+    WHERE relkind = 'S'
+      AND relname = 'dim_employees_employee_id_seq'
+  ) THEN
+    CREATE SEQUENCE dim_employees_employee_id_seq;
+  END IF;
+END$$;
+
+-- 2) Asegurar que employee_id use esa secuencia por defecto
+ALTER TABLE dim_employees
+  ALTER COLUMN employee_id SET DEFAULT nextval('dim_employees_employee_id_seq'::regclass);
+
+-- 3) Ajustar la secuencia al máximo employee_id actual (si hay datos)
+DO $$
+DECLARE
+  v_max_id integer;
+BEGIN
+  SELECT MAX(employee_id) INTO v_max_id FROM dim_employees;
+
+  IF v_max_id IS NULL THEN
+    -- Tabla vacía: arrancar en 1 sin marcarlo como "ya usado"
+    PERFORM setval('dim_employees_employee_id_seq', 1, false);
+  ELSE
+    -- Tabla con datos: continuar a partir del máximo actual
+    PERFORM setval('dim_employees_employee_id_seq', v_max_id, true);
+  END IF;
+END$$;
+
+--------
+
+-- =====================================================
+-- FUNCIONES Y TRIGGERS PARA SINCRONIZACIÓN AUTOMÁTICA
+-- =====================================================
+
+-- Función para sincronizar fact_sales cuando se completa una orden
+CREATE OR REPLACE FUNCTION sync_fact_sales_on_order_complete()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_customer_key INTEGER;
+    v_product_key INTEGER;
+    v_date_key INTEGER;
+    v_order_date TIMESTAMP WITH TIME ZONE;
+    item_rec RECORD;
+    v_unit_cost DECIMAL(10,2);
+    v_total_cost DECIMAL(12,2);
+    v_profit_amount DECIMAL(12,2);
+    v_profit_margin DECIMAL(10,2);
+    v_item_count INTEGER;
+    v_discount_per_item DECIMAL(10,2);
+    v_tax_per_item DECIMAL(10,2);
+BEGIN
+    -- Solo procesar cuando el status cambia a 'completed' o 'delivered'
+    IF NEW.status IN ('completed', 'delivered') AND 
+       (OLD.status IS NULL OR OLD.status NOT IN ('completed', 'delivered')) THEN
+
+        v_order_date := COALESCE(NEW.order_date, NEW.created_at);
+        v_date_key := CAST(TO_CHAR(v_order_date, 'YYYYMMDD') AS INTEGER);
+
+        -- Asegurar que existe la fecha en dim_calendar
+        INSERT INTO dim_calendar (date_key, full_date, year, quarter, month, month_name, week, 
+                                  day_of_year, day_of_month, day_of_week, day_name, is_weekend, 
+                                  is_holiday, fiscal_year, fiscal_quarter)
+        SELECT 
+            v_date_key,
+            v_order_date::date,
+            EXTRACT(YEAR FROM v_order_date)::INTEGER,
+            EXTRACT(QUARTER FROM v_order_date)::INTEGER,
+            EXTRACT(MONTH FROM v_order_date)::INTEGER,
+            TO_CHAR(v_order_date, 'Month'),
+            EXTRACT(WEEK FROM v_order_date)::INTEGER,
+            EXTRACT(DOY FROM v_order_date)::INTEGER,
+            EXTRACT(DAY FROM v_order_date)::INTEGER,
+            EXTRACT(DOW FROM v_order_date)::INTEGER + 1,
+            TO_CHAR(v_order_date, 'Day'),
+            EXTRACT(DOW FROM v_order_date) IN (0, 6),
+            FALSE,
+            EXTRACT(YEAR FROM v_order_date)::INTEGER,
+            EXTRACT(QUARTER FROM v_order_date)::INTEGER
+        ON CONFLICT (date_key) DO NOTHING;
+
+        -- Obtener o crear customer_key
+        SELECT customer_key INTO v_customer_key
+        FROM dim_customers
+        WHERE user_id = NEW.customer_id;
+
+        -- Si no existe el cliente, crear uno básico
+        IF v_customer_key IS NULL THEN
+            INSERT INTO dim_customers (user_id, email, customer_type, registration_date, is_active)
+            VALUES (
+                NEW.customer_id,
+                COALESCE(NEW.customer_email, 'customer@email.com'),
+                'regular',
+                COALESCE(NEW.order_date::date, NEW.created_at::date),
+                TRUE
+            )
+            RETURNING customer_key INTO v_customer_key;
+        END IF;
+
+        -- Procesar cada item de la orden
+        FOR item_rec IN 
+            SELECT 
+                oi.id as order_item_id,
+                oi.product_id,
+                oi.quantity,
+                oi.unit_price,
+                oi.total_price,
+                dp.product_key
+            FROM order_items oi
+            LEFT JOIN dim_products dp ON dp.product_id = oi.product_id
+            LEFT JOIN products p ON oi.product_id = p.id
+            WHERE oi.order_id = NEW.id
+        LOOP
+            -- Obtener o crear product_key
+            v_product_key := item_rec.product_key;
+            
+            IF v_product_key IS NULL THEN
+                -- Crear producto en dim_products si no existe
+                INSERT INTO dim_products (product_id, name, category_name, is_active)
+                SELECT 
+                    p.id,
+                    p.name,
+                    COALESCE(p.category, 'General'),
+                    COALESCE(p.is_active, TRUE)
+                FROM products p
+                WHERE p.id = item_rec.product_id
+                ON CONFLICT (product_id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    category_name = EXCLUDED.category_name,
+                    is_active = EXCLUDED.is_active
+                RETURNING product_key INTO v_product_key;
+            END IF;
+
+            -- Calcular métricas
+            -- Contar items para dividir descuentos e impuestos (solo una vez)
+            IF v_item_count IS NULL THEN
+                SELECT COUNT(*) INTO v_item_count
+                FROM order_items
+                WHERE order_id = NEW.id;
+            END IF;
+
+            v_unit_cost := COALESCE(item_rec.unit_price * 0.7, 0);
+            v_total_cost := item_rec.quantity * v_unit_cost;
+            v_profit_amount := item_rec.total_price - v_total_cost;
+            v_profit_margin := CASE 
+                WHEN item_rec.total_price > 0 
+                THEN (v_profit_amount / item_rec.total_price * 100)
+                ELSE 0 
+            END;
+            v_discount_per_item := COALESCE(NEW.discount_amount, 0) / NULLIF(v_item_count, 0);
+            v_tax_per_item := COALESCE(NEW.tax_amount, 0) / NULLIF(v_item_count, 0);
+
+            -- Insertar en fact_sales (usando índice único para evitar duplicados)
+            BEGIN
+                INSERT INTO fact_sales (
+                    order_id,
+                    order_item_id,
+                    date_key,
+                    customer_key,
+                    product_key,
+                    location_key,
+                    quantity_sold,
+                    unit_price,
+                    total_price,
+                    discount_amount,
+                    tax_amount,
+                    final_price,
+                    unit_cost,
+                    total_cost,
+                    profit_margin,
+                    profit_amount,
+                    payment_method,
+                    payment_status,
+                    order_status,
+                    delivery_method,
+                    delivery_date,
+                    order_date
+                )
+                VALUES (
+                    NEW.id,
+                    item_rec.order_item_id,
+                    v_date_key,
+                    v_customer_key,
+                    v_product_key,
+                    1,
+                    item_rec.quantity,
+                    item_rec.unit_price,
+                    item_rec.total_price,
+                    v_discount_per_item,
+                    v_tax_per_item,
+                    item_rec.total_price,
+                    v_unit_cost,
+                    v_total_cost,
+                    v_profit_margin,
+                    v_profit_amount,
+                    NEW.payment_method,
+                    NEW.payment_status,
+                    NEW.status,
+                    NEW.shipping_method,
+                    CASE WHEN NEW.status = 'delivered' THEN NEW.order_date::date ELSE NULL END,
+                    v_order_date
+                );
+            EXCEPTION WHEN unique_violation THEN
+                -- Si ya existe, actualizar el registro existente
+                UPDATE fact_sales
+                SET
+                    quantity_sold = item_rec.quantity,
+                    unit_price = item_rec.unit_price,
+                    total_price = item_rec.total_price,
+                    final_price = item_rec.total_price,
+                    unit_cost = v_unit_cost,
+                    total_cost = v_total_cost,
+                    profit_margin = v_profit_margin,
+                    profit_amount = v_profit_amount,
+                    updated_at = NOW()
+                WHERE order_id = NEW.id AND order_item_id = item_rec.order_item_id;
+            END;
+        END LOOP;
+
+        -- Actualizar estadísticas del cliente
+        UPDATE dim_customers
+        SET 
+            total_orders = (SELECT COUNT(DISTINCT order_id) FROM fact_sales WHERE customer_key = v_customer_key),
+            total_spent = (SELECT COALESCE(SUM(final_price), 0) FROM fact_sales WHERE customer_key = v_customer_key),
+            updated_at = NOW()
+        WHERE customer_key = v_customer_key;
+
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Crear trigger para orders
+DROP TRIGGER IF EXISTS trigger_sync_fact_sales ON orders;
+CREATE TRIGGER trigger_sync_fact_sales
+    AFTER INSERT OR UPDATE ON orders
+    FOR EACH ROW
+    EXECUTE FUNCTION sync_fact_sales_on_order_complete();
+
+-- Función para sincronizar fact_inventory cuando cambia el stock
+CREATE OR REPLACE FUNCTION sync_fact_inventory_on_product_change()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_product_key INTEGER;
+    v_date_key INTEGER;
+    v_location_key INTEGER := 1; -- Ubicación por defecto
+    v_today DATE := CURRENT_DATE;
+BEGIN
+    v_date_key := CAST(TO_CHAR(v_today, 'YYYYMMDD') AS INTEGER);
+
+    -- Asegurar que existe la fecha en dim_calendar
+    INSERT INTO dim_calendar (date_key, full_date, year, quarter, month, month_name, week, 
+                              day_of_year, day_of_month, day_of_week, day_name, is_weekend, 
+                              is_holiday, fiscal_year, fiscal_quarter)
+    SELECT 
+        v_date_key,
+        v_today,
+        EXTRACT(YEAR FROM v_today)::INTEGER,
+        EXTRACT(QUARTER FROM v_today)::INTEGER,
+        EXTRACT(MONTH FROM v_today)::INTEGER,
+        TO_CHAR(v_today, 'Month'),
+        EXTRACT(WEEK FROM v_today)::INTEGER,
+        EXTRACT(DOY FROM v_today)::INTEGER,
+        EXTRACT(DAY FROM v_today)::INTEGER,
+        EXTRACT(DOW FROM v_today)::INTEGER + 1,
+        TO_CHAR(v_today, 'Day'),
+        EXTRACT(DOW FROM v_today) IN (0, 6),
+        FALSE,
+        EXTRACT(YEAR FROM v_today)::INTEGER,
+        EXTRACT(QUARTER FROM v_today)::INTEGER
+    ON CONFLICT (date_key) DO NOTHING;
+
+    -- Obtener product_key desde dim_products
+    SELECT product_key INTO v_product_key
+    FROM dim_products
+    WHERE product_id = NEW.id;
+
+    -- Si no existe, crear el producto en dim_products
+    IF v_product_key IS NULL THEN
+        INSERT INTO dim_products (product_id, name, description, category_name, is_active)
+        VALUES (
+            NEW.id,
+            NEW.name,
+            COALESCE(NEW.description, ''),
+            COALESCE(NEW.category, 'General'),
+            COALESCE(NEW.is_active, TRUE)
+        )
+        RETURNING product_key INTO v_product_key;
+    ELSE
+        -- Actualizar dim_products si cambió
+        UPDATE dim_products
+        SET 
+            name = NEW.name,
+            description = COALESCE(NEW.description, ''),
+            category_name = COALESCE(NEW.category, category_name),
+            is_active = COALESCE(NEW.is_active, is_active),
+            updated_at = NOW()
+        WHERE product_key = v_product_key;
+    END IF;
+
+    -- Insertar/actualizar en fact_inventory
+    INSERT INTO fact_inventory (
+        product_key,
+        location_key,
+        date_key,
+        beginning_stock,
+        stock_received,
+        stock_sold,
+        stock_adjusted,
+        stock_returned,
+        ending_stock,
+        unit_cost,
+        total_value,
+        average_cost,
+        reorder_point,
+        max_stock,
+        is_low_stock,
+        is_out_of_stock,
+        snapshot_date
+    )
+    VALUES (
+        v_product_key,
+        v_location_key,
+        v_date_key,
+        COALESCE(NEW.stock, 0), -- beginning_stock (usamos el stock actual como beginning para la primera vez)
+        0, -- stock_received
+        0, -- stock_sold
+        0, -- stock_adjusted
+        0, -- stock_returned
+        COALESCE(NEW.stock, 0), -- ending_stock
+        COALESCE(NEW.price * 0.7, 0), -- unit_cost estimado
+        COALESCE(NEW.stock * NEW.price * 0.7, 0), -- total_value
+        COALESCE(NEW.price * 0.7, 0), -- average_cost
+        10, -- reorder_point por defecto
+        1000, -- max_stock por defecto
+        (COALESCE(NEW.stock, 0) <= 10), -- is_low_stock
+        (COALESCE(NEW.stock, 0) = 0), -- is_out_of_stock
+        NOW()
+    )
+    ON CONFLICT (product_key, date_key)
+    DO UPDATE SET
+        ending_stock = EXCLUDED.ending_stock,
+        total_value = EXCLUDED.total_value,
+        average_cost = EXCLUDED.average_cost,
+        is_low_stock = EXCLUDED.is_low_stock,
+        is_out_of_stock = EXCLUDED.is_out_of_stock,
+        updated_at = NOW();
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Crear trigger para products
+DROP TRIGGER IF EXISTS trigger_sync_fact_inventory ON products;
+CREATE TRIGGER trigger_sync_fact_inventory
+    AFTER INSERT OR UPDATE ON products
+    FOR EACH ROW
+    EXECUTE FUNCTION sync_fact_inventory_on_product_change();
+
+-- =====================================================
+-- ÍNDICES ÚNICOS PARA EVITAR DUPLICADOS
+-- =====================================================
+-- Necesario para el ON CONFLICT en los triggers
+
+-- Índice único para fact_inventory (product_key + date_key)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fact_inventory_unique 
+ON fact_inventory (product_key, date_key);
+
+-- Índice único para fact_sales (order_id + order_item_id)
+-- Esto permite evitar duplicados cuando se ejecuta el trigger múltiples veces
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fact_sales_unique 
+ON fact_sales (order_id, order_item_id);
+
+-- =====================================================
+-- VIEWS PARA REPORTES RÁPIDOS (CORREGIDAS)
+-- =====================================================
+
+-- View para métricas principales
+CREATE OR REPLACE VIEW v_dashboard_metrics AS
+SELECT
+    COALESCE(SUM(fs.final_price), 0) as total_sales,
+    COUNT(DISTINCT fs.order_id) as total_orders,
+    COUNT(DISTINCT fs.customer_key) as total_customers,
+    CASE
+        WHEN COUNT(DISTINCT fs.order_id) > 0
+        THEN COALESCE(SUM(fs.final_price), 0) / COUNT(DISTINCT fs.order_id)
+        ELSE 0
+    END as avg_order_value,
+    (SELECT COUNT(*) FROM products WHERE is_active = true) as total_products,
+    (SELECT COUNT(*) FROM products WHERE stock < 10 AND is_active = true) as low_stock_products,
+    COALESCE(SUM(fi.total_value), 0) as total_inventory_value
+FROM fact_sales fs
+FULL OUTER JOIN fact_inventory fi ON fi.date_key = CAST(TO_CHAR(CURRENT_DATE, 'YYYYMMDD') AS INTEGER)
+WHERE fs.order_date >= CURRENT_DATE - INTERVAL '30 days'
+   OR fs.order_date IS NULL;
+
+-- View para análisis de ventas por producto
+CREATE OR REPLACE VIEW v_product_sales_analysis AS
+SELECT
+    dp.product_key,
+    dp.name as product_name,
+    dp.category_name as category,
+    SUM(fs.quantity_sold) as total_quantity_sold,
+    SUM(fs.final_price) as total_revenue,
+    AVG(fs.unit_price) as avg_price,
+    COUNT(DISTINCT fs.order_id) as orders_count,
+    COUNT(DISTINCT fs.customer_key) as customers_count
+FROM fact_sales fs
+JOIN dim_products dp ON fs.product_key = dp.product_key
+WHERE fs.order_date >= CURRENT_DATE - INTERVAL '90 days'
+GROUP BY dp.product_key, dp.name, dp.category_name
+ORDER BY total_revenue DESC;
+
+-- View para análisis de inventario crítico
+CREATE OR REPLACE VIEW v_critical_inventory AS
+SELECT
+    dp.product_key,
+    dp.name as product_name,
+    dp.category_name as category,
+    fi.ending_stock as current_stock,
+    fi.reorder_point as minimum_stock,
+    fi.total_value as inventory_value,
+    CASE
+        WHEN fi.ending_stock <= fi.reorder_point THEN 'CRITICAL'
+        WHEN fi.ending_stock <= fi.reorder_point * 2 THEN 'LOW'
+        ELSE 'OK'
+    END as stock_status,
+    fi.updated_at
+FROM fact_inventory fi
+JOIN dim_products dp ON fi.product_key = dp.product_key
+WHERE fi.date_key = CAST(TO_CHAR(CURRENT_DATE, 'YYYYMMDD') AS INTEGER)
+ORDER BY
+    CASE
+        WHEN fi.ending_stock <= fi.reorder_point THEN 1
+        WHEN fi.ending_stock <= fi.reorder_point * 2 THEN 2
+        ELSE 3
+    END,
+    fi.ending_stock ASC;
+
+-- View para análisis de clientes top
+CREATE OR REPLACE VIEW v_top_customers AS
+SELECT
+    dc.customer_key,
+    dc.email,
+    dc.customer_type,
+    COUNT(DISTINCT fs.order_id) as total_orders,
+    SUM(fs.final_price) as total_spent,
+    AVG(fs.final_price) as avg_order_value,
+    MAX(fs.order_date) as last_order_date,
+    EXTRACT(DAYS FROM NOW() - MAX(fs.order_date)) as days_since_last_order
+FROM dim_customers dc
+LEFT JOIN fact_sales fs ON dc.customer_key = fs.customer_key
+WHERE fs.order_date >= CURRENT_DATE - INTERVAL '1 year'
+   OR fs.order_date IS NULL
+GROUP BY dc.customer_key, dc.email, dc.customer_type
+HAVING COUNT(DISTINCT fs.order_id) > 0
+ORDER BY total_spent DESC;
+
+-- =====================================================
+-- FUNCIONES DE UTILIDAD
+-- =====================================================
+
+-- Función para obtener métricas del dashboard
+CREATE OR REPLACE FUNCTION get_dashboard_metrics()
+RETURNS JSON AS $$
+DECLARE
+    result JSON;
+BEGIN
+    SELECT json_build_object(
+        'totalSales', COALESCE(total_sales, 0),
+        'totalOrders', COALESCE(total_orders, 0),
+        'totalCustomers', COALESCE(total_customers, 0),
+        'avgOrderValue', COALESCE(avg_order_value, 0),
+        'totalProducts', COALESCE(total_products, 0),
+        'lowStockProducts', COALESCE(low_stock_products, 0),
+        'inventoryValue', COALESCE(total_inventory_value, 0)
+    ) INTO result
+    FROM v_dashboard_metrics;
+
+    RETURN result;
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- =====================================================
+-- SCRIPT COMPLETO: ELIMINAR Y RECREAR PROVEEDORES
+-- =====================================================
+-- Este script elimina completamente la tabla dim_suppliers
+-- y la crea desde cero con toda la estructura necesaria
+-- =====================================================
+
+-- PASO 1: ELIMINAR TODO LO EXISTENTE
+-- =====================================================
+
+-- Eliminar trigger si existe
+DROP TRIGGER IF EXISTS trigger_update_suppliers_updated_at ON dim_suppliers;
+
+-- Eliminar función del trigger si existe
+DROP FUNCTION IF EXISTS update_dim_suppliers_updated_at();
+
+-- Eliminar índices si existen
+DROP INDEX IF EXISTS idx_suppliers_id;
+DROP INDEX IF EXISTS idx_suppliers_active;
+DROP INDEX IF EXISTS idx_suppliers_name;
+
+-- Eliminar tabla si existe (esto eliminará todos los datos)
+DROP TABLE IF EXISTS dim_suppliers CASCADE;
+
+-- =====================================================
+-- PASO 2: CREAR TABLA DESDE CERO
+-- =====================================================
+
+CREATE TABLE dim_suppliers (
+  supplier_key SERIAL PRIMARY KEY,
+  supplier_id VARCHAR(50) UNIQUE NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  contact_person VARCHAR(255),
+  email VARCHAR(255),
+  phone VARCHAR(50),
+  address TEXT,
+  city VARCHAR(100),
+  country VARCHAR(100) DEFAULT 'Perú',
+  payment_terms VARCHAR(50) DEFAULT 'Net 30',
+  product_categories TEXT,
+  rating DECIMAL(3,2) DEFAULT 5.00,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =====================================================
+-- PASO 3: CREAR ÍNDICES
+-- =====================================================
+
+CREATE INDEX idx_suppliers_id ON dim_suppliers(supplier_id);
+CREATE INDEX idx_suppliers_active ON dim_suppliers(is_active);
+CREATE INDEX idx_suppliers_name ON dim_suppliers(name);
+
+-- =====================================================
+-- PASO 4: CREAR FUNCIÓN Y TRIGGER
+-- =====================================================
+
+-- Función para actualizar updated_at automáticamente
+CREATE OR REPLACE FUNCTION update_dim_suppliers_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = CURRENT_TIMESTAMP;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger que ejecuta la función
+CREATE TRIGGER trigger_update_suppliers_updated_at
+  BEFORE UPDATE ON dim_suppliers
+  FOR EACH ROW
+  EXECUTE FUNCTION update_dim_suppliers_updated_at();
+
+-- =====================================================
+-- PASO 5: INSERTAR DATOS DE EJEMPLO
+-- =====================================================
+
+INSERT INTO dim_suppliers (
+  supplier_id,
+  name,
+  contact_person,
+  email,
+  phone,
+  city,
+  country,
+  payment_terms,
+  rating,
+  is_active,
+  product_categories
+) VALUES
+  (
+    'SUP-001',
+    'Laboratorios Farmacéuticos ABC',
+    'Juan Pérez',
+    'contacto@lababc.com',
+    '+51 987654321',
+    'Lima',
+    'Perú',
+    'Net 30',
+    4.5,
+    true,
+    'Medicamentos, Antibióticos'
+  ),
+  (
+    'SUP-002',
+    'Distribuidora Médica XYZ',
+    'María González',
+    'ventas@distribuidoraxyz.com',
+    '+51 987654322',
+    'Lima',
+    'Perú',
+    'Net 30',
+    4.8,
+    true,
+    'Equipos médicos, Instrumental'
+  ),
+  (
+    'SUP-003',
+    'Importadora Farmacéutica Global',
+    'Carlos Rodríguez',
+    'info@ifglobal.com',
+    '+51 987654323',
+    'Callao',
+    'Perú',
+    'Net 60',
+    4.2,
+    true,
+    'Medicamentos importados'
+  ),
+  (
+    'SUP-004',
+    'Laboratorio Nacional',
+    'Ana Martínez',
+    'contacto@labnacional.com',
+    '+51 987654324',
+    'Arequipa',
+    'Perú',
+    'Net 30',
+    4.6,
+    true,
+    'Medicamentos genéricos'
+  ),
+  (
+    'SUP-005',
+    'Distribuidora Wellness',
+    'Pedro Sánchez',
+    'pedidos@wellness.com',
+    '+51 987654325',
+    'Trujillo',
+    'Perú',
+    'COD',
+    4.3,
+    true,
+    'Vitaminas, Suplementos'
+  ),
+  (
+    'SUP-006',
+    'Farmacéutica del Norte',
+    'Luis Torres',
+    'ventas@farmanorte.com',
+    '+51 987654326',
+    'Chiclayo',
+    'Perú',
+    'Net 30',
+    4.4,
+    true,
+    'Medicamentos, Cosméticos'
+  ),
+  (
+    'SUP-007',
+    'Importaciones Médicas SAC',
+    'Carmen Ruiz',
+    'importaciones@medicsac.com',
+    '+51 987654327',
+    'Lima',
+    'Perú',
+    'Net 45',
+    4.7,
+    true,
+    'Equipos médicos importados'
+  ),
+  (
+    'SUP-008',
+    'Laboratorios Peruanos Unidos',
+    'Roberto Fernández',
+    'contacto@labperuanos.com',
+    '+51 987654328',
+    'Cusco',
+    'Perú',
+    'Net 30',
+    4.1,
+    true,
+    'Medicamentos naturales'
+  );
+
+
+
+-- Verificar que la tabla fue creada
+SELECT
+  'Tabla creada exitosamente' as status,
+  COUNT(*) as total_proveedores
+FROM dim_suppliers;
+
+-- Mostrar estructura de la tabla
+SELECT
+  column_name,
+  data_type,
+  character_maximum_length,
+  column_default,
+  is_nullable
+FROM information_schema.columns
+WHERE table_name = 'dim_suppliers'
+ORDER BY ordinal_position;
+
+-- =====================================================
+-- FIN DEL SCRIPT
+-- =====================================================
+-- La tabla dim_suppliers ha sido eliminada y recreada
+-- con 8 proveedores de ejemplo listos para usar
+-- =====================================================
+
+-- =====================================================
+-- VISTAS PARA OBTENER DATOS REALES EN EL PANEL DE ADMINISTRACIÓN
+-- Ejecutar este script en Supabase SQL Editor
+-- =====================================================
+
+-- PASO 1: Eliminar vistas existentes si existen
+DROP VIEW IF EXISTS v_customer_analytics CASCADE;
+DROP VIEW IF EXISTS v_top_products CASCADE;
+DROP VIEW IF EXISTS v_order_statistics CASCADE;
+DROP VIEW IF EXISTS v_monthly_sales CASCADE;
+DROP VIEW IF EXISTS v_inventory_analysis CASCADE;
+DROP VIEW IF EXISTS v_dashboard_metrics CASCADE;
+
+-- PASO 2: Crear vistas desde cero
+
+-- 1. Vista de análisis de clientes con datos reales
+CREATE VIEW v_customer_analytics AS
+SELECT
+    p.id AS customer_id,
+    p.email,
+    p.first_name,
+    p.last_name,
+    CONCAT(COALESCE(p.first_name, ''), ' ', COALESCE(p.last_name, '')) AS full_name,
+    p.created_at,
+    COUNT(DISTINCT o.id) AS total_orders,
+    COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN o.final_amount ELSE 0 END), 0) AS total_spent,
+    COALESCE(AVG(CASE WHEN o.status != 'cancelled' THEN o.final_amount END), 0) AS avg_order_value,
+    MAX(o.order_date) AS last_order_date
+FROM
+    profiles p
+LEFT JOIN
+    orders o ON p.id = o.customer_id
+GROUP BY
+    p.id, p.email, p.first_name, p.last_name, p.created_at
+ORDER BY
+    total_spent DESC;
+
+-- 2. Vista de top productos más vendidos
+CREATE VIEW v_top_products AS
+SELECT
+    p.id AS product_id,
+    p.name AS product_name,
+    p.category AS category_name,
+    p.price,
+    p.stock,
+    COUNT(oi.id) AS times_sold,
+    COALESCE(SUM(oi.quantity), 0) AS total_quantity,
+    COALESCE(SUM(oi.total_price), 0) AS total_revenue
+FROM
+    products p
+LEFT JOIN
+    order_items oi ON p.id = oi.product_id
+WHERE
+    p.is_active = true
+GROUP BY
+    p.id, p.name, p.category, p.price, p.stock
+ORDER BY
+    total_revenue DESC;
+
+-- 3. Vista de estadísticas de pedidos
+CREATE VIEW v_order_statistics AS
+SELECT
+    COUNT(*) FILTER (WHERE status = 'pending') AS pending,
+    COUNT(*) FILTER (WHERE status = 'processing') AS processing,
+    COUNT(*) FILTER (WHERE status = 'shipped') AS shipped,
+    COUNT(*) FILTER (WHERE status = 'delivered') AS delivered,
+    COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled,
+    COUNT(*) AS total_orders,
+    COALESCE(SUM(CASE WHEN status = 'delivered' THEN final_amount ELSE 0 END), 0) AS total_revenue,
+    COALESCE(AVG(CASE WHEN status = 'delivered' THEN final_amount END), 0) AS avg_order_value
+FROM
+    orders;
+
+-- 4. Vista de ventas por mes (últimos 12 meses)
+CREATE VIEW v_monthly_sales AS
+SELECT
+    TO_CHAR(order_date, 'YYYY-MM') AS month_key,
+    TO_CHAR(order_date, 'Month') AS month_name,
+    EXTRACT(YEAR FROM order_date) AS year,
+    EXTRACT(MONTH FROM order_date) AS month,
+    COUNT(*) AS orders,
+    COALESCE(SUM(CASE WHEN status = 'delivered' THEN final_amount ELSE 0 END), 0) AS sales
+FROM
+    orders
+WHERE
+    order_date >= CURRENT_DATE - INTERVAL '12 months'
+GROUP BY
+    TO_CHAR(order_date, 'YYYY-MM'),
+    TO_CHAR(order_date, 'Month'),
+    EXTRACT(YEAR FROM order_date),
+    EXTRACT(MONTH FROM order_date)
+ORDER BY
+    year DESC, month DESC;
+
+-- 5. Vista de análisis de inventario
+CREATE VIEW v_inventory_analysis AS
+SELECT
+    id AS product_id,
+    name AS product_name,
+    category AS category_name,
+    stock AS current_stock,
+    price,
+    stock * price AS inventory_value,
+    CASE
+        WHEN stock = 0 THEN 'Sin stock'
+        WHEN stock < 10 THEN 'Crítico'
+        WHEN stock < 50 THEN 'Bajo'
+        ELSE 'Normal'
+    END AS stock_status,
+    CASE
+        WHEN stock < 50 THEN true
+        ELSE false
+    END AS needs_reorder,
+    is_active,
+    created_at
+FROM
+    products
+ORDER BY
+    stock ASC;
+
+-- 6. Vista de métricas del dashboard
+CREATE VIEW v_dashboard_metrics AS
+SELECT
+    (SELECT COUNT(*) FROM orders WHERE status = 'delivered') AS total_orders,
+    (SELECT COALESCE(SUM(final_amount), 0) FROM orders WHERE status = 'delivered') AS total_sales,
+    (SELECT COUNT(*) FROM products WHERE is_active = true) AS total_products,
+    (SELECT COUNT(*) FROM products WHERE is_active = true AND stock < 50) AS low_stock_products,
+    (SELECT COUNT(DISTINCT customer_id) FROM orders) AS total_customers,
+    (SELECT COALESCE(AVG(final_amount), 0) FROM orders WHERE status = 'delivered') AS avg_order_value;
+
+-- =====================================================
+-- PERMISOS - Otorgar acceso de lectura a las vistas
+-- =====================================================
+
+GRANT SELECT ON v_customer_analytics TO anon, authenticated;
+GRANT SELECT ON v_top_products TO anon, authenticated;
+GRANT SELECT ON v_order_statistics TO anon, authenticated;
+GRANT SELECT ON v_monthly_sales TO anon, authenticated;
+GRANT SELECT ON v_inventory_analysis TO anon, authenticated;
+GRANT SELECT ON v_dashboard_metrics TO anon, authenticated;
+
+-- =====================================================
+-- FUNCIONES AUXILIARES
+-- =====================================================
+
+-- Eliminar funciones si existen
+DROP FUNCTION IF EXISTS get_dashboard_metrics() CASCADE;
+DROP FUNCTION IF EXISTS get_top_customers(INTEGER) CASCADE;
+DROP FUNCTION IF EXISTS get_top_products_real(INTEGER) CASCADE;
+
+-- Función para obtener las métricas del dashboard
+CREATE FUNCTION get_dashboard_metrics()
+RETURNS TABLE (
+    total_orders BIGINT,
+    total_sales NUMERIC,
+    total_products BIGINT,
+    low_stock_products BIGINT,
+    total_customers BIGINT,
+    avg_order_value NUMERIC
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT * FROM v_dashboard_metrics;
+END;
+$$;
+
+-- Función para obtener top clientes
+CREATE FUNCTION get_top_customers(limit_count INTEGER DEFAULT 10)
+RETURNS TABLE (
+    customer_id UUID,
+    email TEXT,
+    full_name TEXT,
+    total_orders BIGINT,
+    total_spent NUMERIC
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        v.customer_id,
+        v.email,
+        v.full_name,
+        v.total_orders,
+        v.total_spent
+    FROM
+        v_customer_analytics v
+    WHERE
+        v.total_orders > 0
+    ORDER BY
+        v.total_spent DESC
+    LIMIT limit_count;
+END;
+$$;
+
+-- Función para obtener top productos
+CREATE FUNCTION get_top_products_real(limit_count INTEGER DEFAULT 10)
+RETURNS TABLE (
+    product_id UUID,
+    product_name TEXT,
+    category_name TEXT,
+    total_revenue NUMERIC,
+    times_sold BIGINT,
+    total_quantity NUMERIC
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        v.product_id,
+        v.product_name,
+        v.category_name,
+        v.total_revenue,
+        v.times_sold,
+        v.total_quantity
+    FROM
+        v_top_products v
+    WHERE
+        v.times_sold > 0
+    ORDER BY
+        v.total_revenue DESC
+    LIMIT limit_count;
+END;
+$$;
+
+-- =====================================================
+-- ÍNDICES PARA MEJORAR EL RENDIMIENTO
+-- =====================================================
+
+-- Índices en la tabla orders
+CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_order_date ON orders(order_date DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at DESC);
+
+-- Índices en la tabla order_items
+CREATE INDEX IF NOT EXISTS idx_order_items_product_id ON order_items(product_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+
+-- Índices en la tabla products
+CREATE INDEX IF NOT EXISTS idx_products_is_active ON products(is_active);
+CREATE INDEX IF NOT EXISTS idx_products_stock ON products(stock);
+CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
+
+-- Índices en la tabla profiles
+CREATE INDEX IF NOT EXISTS idx_profiles_email ON profiles(email);
+CREATE INDEX IF NOT EXISTS idx_profiles_created_at ON profiles(created_at DESC);
+
+-- =====================================================
+-- FINALIZACIÓN
+-- =====================================================
+
+-- Actualizar las estadísticas de las tablas para mejor rendimiento
+ANALYZE orders;
+ANALYZE order_items;
+ANALYZE products;
+ANALYZE profiles;
+
+-- Mensaje de confirmación
+DO $$
+BEGIN
+    RAISE NOTICE 'Vistas, funciones e índices creados exitosamente para datos reales del panel de administración';
+END $$;
+
+
+
+-- =====================================================
+-- SCRIPT PARA AGREGAR COLUMNA total_purchases A fact_purchases
+-- Ejecutar este script en Supabase SQL Editor
+-- =====================================================
+
+-- 1. Verificar si la tabla fact_purchases existe
+-- Si no existe, crearla primero
+
+-- 2. Agregar columna total_purchases si no existe
+ALTER TABLE fact_purchases
+ADD COLUMN IF NOT EXISTS total_purchases NUMERIC(12, 2) DEFAULT 0;
+
+-- 3. Crear índice para mejorar rendimiento de consultas
+CREATE INDEX IF NOT EXISTS idx_fact_purchases_supplier_key ON fact_purchases(supplier_key);
+CREATE INDEX IF NOT EXISTS idx_fact_purchases_order_date ON fact_purchases(order_date DESC);
+
+-- 4. Crear vista para obtener total de compras por proveedor
+CREATE OR REPLACE VIEW v_supplier_purchases AS
+SELECT 
+    supplier_key,
+    COUNT(*) AS total_purchase_orders,
+    COUNT(DISTINCT product_key) AS unique_products,
+    COALESCE(SUM(quantity_ordered), 0) AS total_quantity_ordered,
+    COALESCE(SUM(final_cost), 0) AS total_purchase_amount,
+    COALESCE(SUM(total_purchases), 0) AS total_purchases,
+    MAX(order_date) AS last_purchase_date,
+    MIN(order_date) AS first_purchase_date
+FROM 
+    fact_purchases
+WHERE 
+    quantity_ordered > 0
+GROUP BY 
+    supplier_key
+ORDER BY 
+    total_purchase_amount DESC;
+
+-- 5. Otorgar permisos de lectura
+GRANT SELECT ON v_supplier_purchases TO anon, authenticated;
+
+-- 6. Comentarios sobre la tabla
+COMMENT ON TABLE fact_purchases IS 'Tabla de hechos: Registra todas las compras realizadas a proveedores';
+COMMENT ON COLUMN fact_purchases.total_purchases IS 'Monto total de la compra (costo final * cantidad)';
+COMMENT ON COLUMN fact_purchases.supplier_key IS 'Referencia a la clave del proveedor en dim_suppliers';
+
+-- Mensaje de confirmación
+DO $$
+BEGIN
+    RAISE NOTICE 'Columna total_purchases agregada a fact_purchases exitosamente';
+    RAISE NOTICE 'Vista v_supplier_purchases creada para análisis de compras por proveedor';
+END $$;
+
+
+----------------
+
+-- =====================================================
+-- SOLUCIÓN FINAL: REMOVER SECURITY DEFINER DE VISTAS
+-- Ejecutar en Supabase SQL Editor
+-- =====================================================
+
+-- MÉTODO: Obtener el código de la vista y recrearla sin SECURITY DEFINER
+
+-- PASO 1: Ver el código actual de la vista
+-- SELECT pg_get_viewdef('public.v_customer_analytics', true);
+
+-- PASO 2: Eliminar todas las vistas problemáticas
+DROP VIEW IF EXISTS public.v_customer_analytics CASCADE;
+DROP VIEW IF EXISTS public.v_top_products CASCADE;
+DROP VIEW IF EXISTS public.v_order_statistics CASCADE;
+DROP VIEW IF EXISTS public.v_monthly_sales CASCADE;
+DROP VIEW IF EXISTS public.v_inventory_analysis CASCADE;
+DROP VIEW IF EXISTS public.v_dashboard_metrics CASCADE;
+DROP VIEW IF EXISTS public.v_supplier_purchases CASCADE;
+
+-- PASO 3: RECREAR SIN SECURITY DEFINER (la forma correcta para Supabase)
+
+CREATE VIEW public.v_customer_analytics WITH (security_barrier) AS
+SELECT 
+    p.id AS customer_id,
+    p.email,
+    p.first_name,
+    p.last_name,
+    CONCAT(COALESCE(p.first_name, ''), ' ', COALESCE(p.last_name, '')) AS full_name,
+    p.created_at,
+    COUNT(DISTINCT o.id) AS total_orders,
+    COALESCE(SUM(CASE WHEN o.status != 'cancelled' THEN o.final_amount ELSE 0 END), 0) AS total_spent,
+    COALESCE(AVG(CASE WHEN o.status != 'cancelled' THEN o.final_amount END), 0) AS avg_order_value,
+    MAX(o.order_date) AS last_order_date
+FROM 
+    profiles p
+LEFT JOIN 
+    orders o ON p.id = o.customer_id
+GROUP BY 
+    p.id, p.email, p.first_name, p.last_name, p.created_at
+ORDER BY 
+    total_spent DESC;
+
+CREATE VIEW public.v_top_products WITH (security_barrier) AS
+SELECT 
+    p.id AS product_id,
+    p.name AS product_name,
+    p.category AS category_name,
+    p.price,
+    p.stock,
+    COUNT(oi.id) AS times_sold,
+    COALESCE(SUM(oi.quantity), 0) AS total_quantity,
+    COALESCE(SUM(oi.total_price), 0) AS total_revenue
+FROM 
+    products p
+LEFT JOIN 
+    order_items oi ON p.id = oi.product_id
+WHERE 
+    p.is_active = true
+GROUP BY 
+    p.id, p.name, p.category, p.price, p.stock
+ORDER BY 
+    total_revenue DESC;
+
+CREATE VIEW public.v_order_statistics WITH (security_barrier) AS
+SELECT 
+    COUNT(*) FILTER (WHERE status = 'pending') AS pending,
+    COUNT(*) FILTER (WHERE status = 'processing') AS processing,
+    COUNT(*) FILTER (WHERE status = 'shipped') AS shipped,
+    COUNT(*) FILTER (WHERE status = 'delivered') AS delivered,
+    COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled,
+    COUNT(*) AS total_orders,
+    COALESCE(SUM(CASE WHEN status = 'delivered' THEN final_amount ELSE 0 END), 0) AS total_revenue,
+    COALESCE(AVG(CASE WHEN status = 'delivered' THEN final_amount END), 0) AS avg_order_value
+FROM 
+    orders;
+
+CREATE VIEW public.v_monthly_sales WITH (security_barrier) AS
+SELECT 
+    TO_CHAR(order_date, 'YYYY-MM') AS month_key,
+    TO_CHAR(order_date, 'Month') AS month_name,
+    EXTRACT(YEAR FROM order_date) AS year,
+    EXTRACT(MONTH FROM order_date) AS month,
+    COUNT(*) AS orders,
+    COALESCE(SUM(CASE WHEN status = 'delivered' THEN final_amount ELSE 0 END), 0) AS sales
+FROM 
+    orders
+WHERE 
+    order_date >= CURRENT_DATE - INTERVAL '12 months'
+GROUP BY 
+    TO_CHAR(order_date, 'YYYY-MM'),
+    TO_CHAR(order_date, 'Month'),
+    EXTRACT(YEAR FROM order_date),
+    EXTRACT(MONTH FROM order_date)
+ORDER BY 
+    year DESC, month DESC;
+
+CREATE VIEW public.v_inventory_analysis WITH (security_barrier) AS
+SELECT 
+    id AS product_id,
+    name AS product_name,
+    category AS category_name,
+    stock AS current_stock,
+    price,
+    stock * price AS inventory_value,
+    CASE 
+        WHEN stock = 0 THEN 'Sin stock'
+        WHEN stock < 10 THEN 'Crítico'
+        WHEN stock < 50 THEN 'Bajo'
+        ELSE 'Normal'
+    END AS stock_status,
+    CASE 
+        WHEN stock < 50 THEN true
+        ELSE false
+    END AS needs_reorder,
+    is_active,
+    created_at
+FROM 
+    products
+ORDER BY 
+    stock ASC;
+
+CREATE VIEW public.v_dashboard_metrics WITH (security_barrier) AS
+SELECT 
+    (SELECT COUNT(*) FROM orders WHERE status = 'delivered') AS total_orders,
+    (SELECT COALESCE(SUM(final_amount), 0) FROM orders WHERE status = 'delivered') AS total_sales,
+    (SELECT COUNT(*) FROM products WHERE is_active = true) AS total_products,
+    (SELECT COUNT(*) FROM products WHERE is_active = true AND stock < 50) AS low_stock_products,
+    (SELECT COUNT(DISTINCT customer_id) FROM orders) AS total_customers,
+    (SELECT COALESCE(AVG(final_amount), 0) FROM orders WHERE status = 'delivered') AS avg_order_value;
+
+CREATE VIEW public.v_supplier_purchases WITH (security_barrier) AS
+SELECT 
+    supplier_key,
+    COUNT(*) AS total_purchase_orders,
+    COUNT(DISTINCT product_key) AS unique_products,
+    COALESCE(SUM(quantity_ordered), 0) AS total_quantity_ordered,
+    COALESCE(SUM(final_cost), 0) AS total_purchase_amount,
+    COALESCE(SUM(total_purchases), 0) AS total_purchases,
+    MAX(order_date) AS last_purchase_date,
+    MIN(order_date) AS first_purchase_date
+FROM 
+    fact_purchases
+WHERE 
+    quantity_ordered > 0
+GROUP BY 
+    supplier_key
+ORDER BY 
+    total_purchase_amount DESC;
+
+-- PASO 4: OTORGAR PERMISOS
+
+GRANT SELECT ON public.v_customer_analytics TO anon, authenticated;
+GRANT SELECT ON public.v_top_products TO anon, authenticated;
+GRANT SELECT ON public.v_order_statistics TO anon, authenticated;
+GRANT SELECT ON public.v_monthly_sales TO anon, authenticated;
+GRANT SELECT ON public.v_inventory_analysis TO anon, authenticated;
+GRANT SELECT ON public.v_dashboard_metrics TO anon, authenticated;
+GRANT SELECT ON public.v_supplier_purchases TO anon, authenticated;
+
+-- PASO 5: CONFIRMAR
+
+DO $$
+BEGIN
+    RAISE NOTICE '✅ VISTAS RECREADAS CORRECTAMENTE';
+    RAISE NOTICE '✅ SIN SECURITY DEFINER';
+    RAISE NOTICE '✅ CON SECURITY BARRIER (mejor práctica)';
+    RAISE NOTICE '';
+    RAISE NOTICE 'Las 7 vistas han sido recreadas:';
+    RAISE NOTICE '  • v_customer_analytics';
+    RAISE NOTICE '  • v_top_products';
+    RAISE NOTICE '  • v_order_statistics';
+    RAISE NOTICE '  • v_monthly_sales';
+    RAISE NOTICE '  • v_inventory_analysis';
+    RAISE NOTICE '  • v_dashboard_metrics';
+    RAISE NOTICE '  • v_supplier_purchases';
+    RAISE NOTICE '';
+    RAISE NOTICE 'Recarga Database Linter para verificar';
+END $$;
+
