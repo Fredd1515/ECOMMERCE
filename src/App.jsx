@@ -11,6 +11,7 @@ import ServicesSection from '@/components/shop/ServicesSection';
 import LoginModal from '@/components/modals/LoginModal';
 import OrderTrackingModal from '@/components/modals/OrderTrackingModal';
 import AddressModal from '@/components/modals/AddressModal';
+import CheckoutModal from '@/components/modals/CheckoutModal';
 import AdminPanel from '@/components/admin/AdminPanel';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -30,6 +31,7 @@ function App() {
   const { user, signOut } = useAuth();
   const [profile, setProfile] = useState(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
   const [isTrackingOpen, setIsTrackingOpen] = useState(false);
@@ -435,7 +437,35 @@ function App() {
           </main>
           <Footer />
           <AnimatePresence>
-            {isCartOpen && <Cart cart={cart} onClose={() => setIsCartOpen(false)} onRemoveItem={removeFromCart} onUpdateQuantity={updateCartQuantity} user={user} />}
+            {isCartOpen && (
+              <Cart 
+                cart={cart} 
+                onClose={() => setIsCartOpen(false)} 
+                onRemoveItem={removeFromCart} 
+                onUpdateQuantity={updateCartQuantity} 
+                user={user}
+                onOpenCheckout={() => {
+                  setIsCartOpen(false);
+                  setIsCheckoutOpen(true);
+                }}
+              />
+            )}
+          </AnimatePresence>
+          <AnimatePresence>
+            {isCheckoutOpen && (
+              <CheckoutModal
+                onClose={() => setIsCheckoutOpen(false)}
+                cart={cart}
+                user={user}
+                profile={profile}
+                onOrderSuccess={() => {
+                  setCart([]);
+                  localStorage.removeItem('pharmacy_cart');
+                  fetchProducts();
+                  fetchOrders();
+                }}
+              />
+            )}
           </AnimatePresence>
           <AnimatePresence>
             {isLoginOpen && <LoginModal onClose={() => setIsLoginOpen(false)} onLoginSuccess={async () => {

@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { X, Plus, Minus, ShoppingBag, CreditCard, Truck } from 'lucide-react';
 import { Button, toast } from '@/components/ui';
 
-const Cart = ({ cart, onClose, onRemoveItem, onUpdateQuantity, user }) => {
+const Cart = ({ cart, onClose, onRemoveItem, onUpdateQuantity, user, onOpenCheckout }) => {
   const [isCheckingOut, setIsCheckingOut] = useState(false);
 
   const subtotal = cart.reduce((total, item) => {
@@ -16,7 +16,7 @@ const Cart = ({ cart, onClose, onRemoveItem, onUpdateQuantity, user }) => {
     return total + (price * item.quantity);
   }, 0);
 
-  const shipping = subtotal > 50 ? 0 : 10;
+  const shipping = subtotal > 50 ? 0 : 8;
   const total = subtotal + shipping;
 
   const handleCheckout = () => {
@@ -29,16 +29,18 @@ const Cart = ({ cart, onClose, onRemoveItem, onUpdateQuantity, user }) => {
       return;
     }
 
-    setIsCheckingOut(true);
-
-    // Simular proceso de pago
-    setTimeout(() => {
+    if (cart.length === 0) {
       toast({
-        title: "🚧 Esta función no está implementada aún",
-        description: "¡Pero no te preocupes! Puedes solicitarla en tu próximo prompt! 🚀"
+        title: "Carrito vacío",
+        description: "Agrega al menos un producto para proceder al pago.",
+        variant: "destructive"
       });
-      setIsCheckingOut(false);
-    }, 2000);
+      return;
+    }
+
+    if (onOpenCheckout) {
+      onOpenCheckout();
+    }
   };
 
   return (

@@ -405,19 +405,32 @@ export const updateOrderStatus = async (orderId, status) => {
  */
 export const createOrder = async (orderData, orderItems) => {
   try {
-    // Crear el pedido
+    const orderCode = orderData.order_code || `ORD-${Date.now().toString().slice(-6)}`;
+    const finalOrderPayload = {
+      ...orderData,
+      order_code: orderCode,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    // 1. Crear el pedido principal
     const { data: order, error: orderError } = await supabase
       .from('orders')
-      .insert(orderData)
+      .insert(finalOrderPayload)
       .select()
       .single();
 
     if (orderError) throw orderError;
 
-    // Crear los items del pedido
+    // 2. Crear los items del pedido
     const itemsWithOrderId = orderItems.map(item => ({
-      ...item,
-      order_id: order.id
+      order_id: order.id,
+      product_id: item.product_id || item.id,
+      product_name: item.product_name || item.name,
+      quantity: parseInt(item.quantity, 10) || 1,
+      unit_price: parseFloat(item.unit_price || item.price) || 0,
+      total_price: parseFloat(item.total_price || (item.price * item.quantity)) || 0,
+      created_at: new Date().toISOString()
     }));
 
     const { data: items, error: itemsError } = await supabase
@@ -425,10 +438,34 @@ export const createOrder = async (orderData, orderItems) => {
       .insert(itemsWithOrderId)
       .select();
 
-    if (itemsError) throw itemsError;
+    if (itemsError) {
+      console.warn('Error inserting order items:', itemsError);
+    }
+
+    // 3. Descontar stock de cada producto en inventario
+    for (const item of orderItems) {
+      const prodId = item.product_id || item.id;
+      const qty = parseInt(item.quantity, 10) || 1;
+      if (prodId) {
+        // Obtener stock actual
+        const { data: prodData } = await supabase
+          .from('products')
+          .select('stock')
+          .eq('id', prodId)
+          .maybeSingle();
+
+        if (prodData && prodData.stock !== undefined) {
+          const newStock = Math.max(0, prodData.stock - qty);
+          await supabase
+            .from('products')
+            .update({ stock: newStock, updated_at: new Date().toISOString() })
+            .eq('id', prodId);
+        }
+      }
+    }
 
     return {
-      data: { ...order, order_items: items },
+      data: { ...order, order_items: items || [] },
       error: null
     };
   } catch (error) {
