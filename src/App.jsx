@@ -19,6 +19,7 @@ import {
   getProducts, 
   getProfile, 
   getOrdersByUser, 
+  getAllOrdersAdmin,
   updateProduct, 
   updateOrderStatus,
   createOrder,
@@ -78,6 +79,13 @@ function App() {
       setOrders([]);
     }
   }, [user]);
+
+  // Re-fetch orders after profile loads so admin role is used correctly
+  useEffect(() => {
+    if (user && profile) {
+      fetchOrders();
+    }
+  }, [profile?.role]);
 
   useEffect(() => {
     localStorage.setItem('pharmacy_cart', JSON.stringify(cart));
@@ -270,11 +278,13 @@ function App() {
 
   const fetchOrders = async () => {
     if (!user) return;
-    const { data, error } = await getOrdersByUser(user.id);
-    if (error) {
-      toast({ title: "Error", description: "No se pudieron cargar los pedidos.", variant: "destructive" });
+    // Admin: fetch ALL orders; Customer: fetch only their own
+    if (profile?.role === 'admin') {
+      const { data, error } = await getAllOrdersAdmin();
+      if (!error && data) setOrders(data);
     } else {
-      setOrders(data);
+      const { data, error } = await getOrdersByUser(user.id);
+      if (!error && data) setOrders(data);
     }
   };
 
@@ -341,14 +351,24 @@ function App() {
     }
   };
 
-  const handleUpdateOrder = async (updatedOrder) => {
-    const { data, error } = await updateOrderStatus(updatedOrder.id, updatedOrder.status);
+  const handleUpdateOrder = async (orderIdOrObj, maybeUpdate) => {
+    // Supports: handleUpdateOrder(orderId, { status }) OR handleUpdateOrder({ id, status })
+    const orderId = typeof orderIdOrObj === 'string' ? orderIdOrObj : orderIdOrObj?.id;
+    const update = maybeUpdate || orderIdOrObj;
+    const newStatus = update?.status;
+
+    if (!orderId || !newStatus) {
+      toast({ title: "Error", description: "ID de pedido o estado no válido.", variant: "destructive" });
+      return;
+    }
+
+    const { data, error } = await updateOrderStatus(orderId, newStatus);
 
     if (error) {
-      toast({ title: "Error", description: "No se pudo actualizar el pedido.", variant: "destructive" });
+      toast({ title: "Error", description: "No se pudo actualizar el pedido en la base de datos.", variant: "destructive" });
     } else {
-      setOrders(orders.map(o => o.id === data.id ? data : o));
-      toast({ title: "Estado del pedido actualizado", description: `Pedido ${data.order_code || data.id} ahora está ${data.status}.` });
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+      toast({ title: "✅ Estado actualizado", description: `Pedido ahora está: ${newStatus}.` });
       fetchOrders();
     }
   };

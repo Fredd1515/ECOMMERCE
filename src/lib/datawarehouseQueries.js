@@ -367,12 +367,40 @@ export const getOrdersByUser = async (userId) => {
         )
       `)
       .eq('customer_id', userId)
-      .order('order_date', { ascending: false });
+      .order('created_at', { ascending: false });
 
     if (error) throw error;
     return { data, error: null };
   } catch (error) {
     console.error('Error fetching orders:', error);
+    return { data: null, error };
+  }
+};
+
+/**
+ * Obtiene TODOS los pedidos (solo para administradores)
+ */
+export const getAllOrdersAdmin = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('orders')
+      .select(`
+        *,
+        order_items (
+          id,
+          product_id,
+          product_name,
+          quantity,
+          unit_price,
+          total_price
+        )
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error fetching all orders (admin):', error);
     return { data: null, error };
   }
 };

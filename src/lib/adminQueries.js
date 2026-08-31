@@ -309,7 +309,7 @@ export const getAllOrdersWithDetails = async () => {
           total_price
         )
       `)
-      .order('order_date', { ascending: false });
+      .order('created_at', { ascending: false });
 
     if (error) {
       console.log('Error fetching orders:', error);
