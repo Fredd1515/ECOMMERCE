@@ -311,25 +311,31 @@ function App() {
     toast({ title: "Sesión cerrada", description: "Has cerrado sesión correctamente." });
   };
 
-  const handleUpdateProduct = async (updatedProduct) => {
-    const { data, error } = await updateProduct(updatedProduct.id, updatedProduct);
+  const handleUpdateProduct = async (productOrId, maybeProduct) => {
+    const product = (typeof productOrId === 'object' && productOrId !== null) ? productOrId : maybeProduct;
+    const productId = typeof productOrId === 'string' ? productOrId : product?.id;
+
+    if (!productId) {
+      toast({ title: "Error", description: "ID de producto no válido.", variant: "destructive" });
+      return;
+    }
+
+    const { data, error } = await updateProduct(productId, product);
     
     if (error) {
-      toast({ title: "Error", description: "No se pudo actualizar el producto.", variant: "destructive" });
+      toast({ title: "Error", description: "No se pudo actualizar el producto en la base de datos.", variant: "destructive" });
+      throw error;
     } else {
-      // Actualizar producto en el estado local inmediatamente
       setProducts(prevProducts => 
-        prevProducts.map(p => p.id === data.id ? { ...p, ...data } : p)
+        prevProducts.map(p => p.id === productId ? { ...p, ...data } : p)
       );
-      toast({ title: "Producto actualizado", description: "Los cambios se han guardado." });
+      toast({ title: "Producto actualizado", description: `${product.name || 'El producto'} se ha guardado correctamente.` });
       
-      // Intentar recargar productos desde la BD (si existen)
-      // Si no hay productos en BD, mantener los cambios locales
       const { data: freshProducts } = await getProducts();
       if (freshProducts && freshProducts.length > 0) {
-        const monthly = selectMonthlyOffers(freshProducts, 5, new Date());
-        setProducts(monthly);
+        setProducts(freshProducts);
       }
+      return data;
     }
   };
 
@@ -339,11 +345,8 @@ function App() {
     if (error) {
       toast({ title: "Error", description: "No se pudo actualizar el pedido.", variant: "destructive" });
     } else {
-      // Actualizar orden en el estado local
       setOrders(orders.map(o => o.id === data.id ? data : o));
-      toast({ title: "Estado del pedido actualizado", description: `Pedido ${data.order_code} ahora está ${data.status}.` });
-      
-      // Recargar órdenes desde la BD para sincronizar
+      toast({ title: "Estado del pedido actualizado", description: `Pedido ${data.order_code || data.id} ahora está ${data.status}.` });
       fetchOrders();
     }
   };
@@ -351,7 +354,6 @@ function App() {
   const handleTrackOrderClick = async () => {
     if (user) {
       setIsLoadingOrders(true);
-      // Recargar pedidos antes de abrir el modal para tener la información más actualizada
       await fetchOrders();
       setIsLoadingOrders(false);
       setIsTrackingOpen(true);
@@ -366,21 +368,16 @@ function App() {
   };
 
   const handleCreateProduct = async (product) => {
-    // Intentar crear producto en BD
     const { data, error } = await createProduct(product);
     if (error) {
-      toast({ title: 'Error', description: 'No se pudo crear el producto en la base de datos, se usará localmente', variant: 'destructive' });
-      // Añadir producto localmente con ID temporal
-      const temp = { id: Date.now(), ...product };
-      setProducts(prev => [...prev, temp]);
-      return temp;
+      toast({ title: 'Error', description: 'No se pudo crear el producto en la base de datos.', variant: 'destructive' });
+      throw error;
     }
 
-    // Si se creó en BD, recargar productos aplicando ofertas mensuales
+    toast({ title: "Producto creado", description: `${product.name} se agregó al catálogo.` });
     const { data: freshProducts } = await getProducts();
     if (freshProducts && freshProducts.length > 0) {
-      const monthly = selectMonthlyOffers(freshProducts, 5, new Date());
-      setProducts(monthly);
+      setProducts(freshProducts);
     } else if (data) {
       setProducts(prev => [...prev, data]);
     }

@@ -36,25 +36,40 @@ export const getProducts = async () => {
 export const updateProduct = async (productId, updates) => {
   const timestamp = new Date().toISOString();
 
-  const { data, error } = await supabase
-    .from('products')
-    .update({
-      ...updates,
-      updated_at: timestamp
-    })
-    .eq('id', productId)
-    .select()
-    .maybeSingle();
+  // Filtrar solo los campos reales de la base de datos para evitar errores con propiedades virtuales
+  const {
+    id,
+    stockStatus,
+    needsReorder,
+    created_at,
+    ...validUpdates
+  } = updates || {};
 
-  if (data && !error) {
-    return { data, error: null };
+  if (validUpdates.price !== undefined) validUpdates.price = parseFloat(validUpdates.price) || 0;
+  if (validUpdates.sale_price !== undefined) validUpdates.sale_price = validUpdates.sale_price ? parseFloat(validUpdates.sale_price) : null;
+  if (validUpdates.stock !== undefined) validUpdates.stock = parseInt(validUpdates.stock, 10) || 0;
+
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .update({
+        ...validUpdates,
+        updated_at: timestamp
+      })
+      .eq('id', productId)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error updating product in Supabase:', error);
+      return { data: null, error };
+    }
+
+    return { data: data || { id: productId, ...validUpdates, updated_at: timestamp }, error: null };
+  } catch (err) {
+    console.error('Exception in updateProduct:', err);
+    return { data: null, error: err };
   }
-
-  // Si no se actualizó, retornar datos actualizados sin error (modo offline)
-  return {
-    data: { id: productId, ...updates, updated_at: timestamp },
-    error: null
-  };
 };
 
 /**
@@ -62,10 +77,20 @@ export const updateProduct = async (productId, updates) => {
  */
 export const createProduct = async (productData) => {
   const timestamp = new Date().toISOString();
+  const {
+    id,
+    stockStatus,
+    needsReorder,
+    ...validData
+  } = productData || {};
+
+  if (validData.price !== undefined) validData.price = parseFloat(validData.price) || 0;
+  if (validData.sale_price !== undefined) validData.sale_price = validData.sale_price ? parseFloat(validData.sale_price) : null;
+  if (validData.stock !== undefined) validData.stock = parseInt(validData.stock, 10) || 0;
 
   try {
     const toInsert = {
-      ...productData,
+      ...validData,
       created_at: timestamp,
       updated_at: timestamp
     };
@@ -77,14 +102,36 @@ export const createProduct = async (productData) => {
       .maybeSingle();
 
     if (error) {
-      console.error('Error creating product:', error);
-      return { data: { id: Date.now(), ...productData, created_at: timestamp }, error };
+      console.error('Error creating product in Supabase:', error);
+      return { data: null, error };
     }
 
     return { data, error: null };
   } catch (error) {
-    console.error('Error creating product:', error);
-    return { data: { id: Date.now(), ...productData, created_at: timestamp }, error };
+    console.error('Exception in createProduct:', error);
+    return { data: null, error };
+  }
+};
+
+/**
+ * Elimina un producto (o lo desactiva)
+ */
+export const deleteProduct = async (productId) => {
+  try {
+    const { error } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', productId);
+
+    if (error) {
+      console.error('Error deleting product from Supabase:', error);
+      return { success: false, error };
+    }
+
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('Exception in deleteProduct:', error);
+    return { success: false, error };
   }
 };
 
