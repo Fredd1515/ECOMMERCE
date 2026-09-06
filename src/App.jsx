@@ -13,6 +13,7 @@ import OrderTrackingModal from '@/components/modals/OrderTrackingModal';
 import AddressModal from '@/components/modals/AddressModal';
 import CheckoutModal from '@/components/modals/CheckoutModal';
 import AdminPanel from '@/components/admin/AdminPanel';
+import AIAssistant from '@/components/chat/AIAssistant';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { 
@@ -523,6 +524,13 @@ function App() {
             )}
           </AnimatePresence>
         </div>
+
+        {/* AI Assistant Widget - visible para todos */}
+        <AIAssistant
+          products={products}
+          user={user}
+          profile={profile}
+        />
       </>
     </HelmetProvider>
   );
