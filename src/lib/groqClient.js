@@ -3,9 +3,12 @@
 // Motor del Asistente Virtual Farmacéutico
 // =====================================================
 
+const IS_DEVELOPMENT = import.meta.env.DEV;
 const API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 export const GROQ_MODEL = 'openai/gpt-oss-120b';
-const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_ENDPOINT = IS_DEVELOPMENT
+  ? 'https://api.groq.com/openai/v1/chat/completions'
+  : '/api/groq';
 
 /**
  * Construye el prompt de sistema con contexto de la farmacia y catálogo.
@@ -82,7 +85,7 @@ const getGroqError = async (response) => {
   }
 
   if (response.status === 401) {
-    return new Error('La clave de Groq no es válida. Revisa VITE_GROQ_API_KEY en .env.local.');
+    return new Error('La clave de Groq no es válida. Revisa la configuración del servidor.');
   }
 
   if (response.status === 429) {
@@ -102,8 +105,8 @@ export const sendMessageToGroq = async (
   user = null,
   onChunk = null
 ) => {
-  if (!API_KEY) {
-    throw new Error('VITE_GROQ_API_KEY no configurada. Crea una clave gratuita en console.groq.com/keys y agrégala a .env.local.');
+  if (IS_DEVELOPMENT && !API_KEY) {
+    throw new Error('VITE_GROQ_API_KEY no configurada. Agrégala a .env.local y reinicia Vite.');
   }
 
   const messages = [
@@ -112,12 +115,12 @@ export const sendMessageToGroq = async (
     { role: 'user', content: userMessage },
   ];
 
+  const headers = { 'Content-Type': 'application/json' };
+  if (IS_DEVELOPMENT) headers.Authorization = 'Bearer ' + API_KEY;
+
   const response = await fetch(GROQ_ENDPOINT, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: 'Bearer ' + API_KEY,
-    },
+    headers,
     body: JSON.stringify({
       model: GROQ_MODEL,
       messages,
@@ -174,4 +177,4 @@ export const sendMessageToGroq = async (
   return fullText;
 };
 
-export const isGroqConfigured = () => Boolean(import.meta.env.VITE_GROQ_API_KEY);
+export const isGroqConfigured = () => (IS_DEVELOPMENT ? Boolean(API_KEY) : true);
