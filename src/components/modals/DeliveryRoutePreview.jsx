@@ -1,6 +1,11 @@
 import React, { useEffect, useRef } from 'react';
 import { Clock3, MapPinned, Route as RouteIcon } from 'lucide-react';
-import { formatDistance, formatDuration, loadGoogleMapsApi } from '@/lib/googleMapsClient';
+import {
+  formatDistance,
+  formatDuration,
+  loadGoogleMapsApi,
+  loadOpenStreetMapApi,
+} from '@/lib/googleMapsClient';
 
 const DeliveryRoutePreview = ({ routeEstimate }) => {
   const mapRef = useRef(null);
@@ -9,6 +14,7 @@ const DeliveryRoutePreview = ({ routeEstimate }) => {
     let cancelled = false;
     let mapPolylines = [];
     let directionsRenderer = null;
+    let leafletMap = null;
 
     const drawRoute = async () => {
       const hasRouteData = routeEstimate?.route
@@ -17,6 +23,32 @@ const DeliveryRoutePreview = ({ routeEstimate }) => {
       if (!hasRouteData || !mapRef.current) return;
 
       try {
+        if (routeEstimate.osrmGeometry?.length) {
+          const L = await loadOpenStreetMapApi();
+          if (cancelled) return;
+
+          const geometry = routeEstimate.osrmGeometry
+            .map(point => [Number(point.lat), Number(point.lng)])
+            .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+
+          if (geometry.length < 2) {
+            throw new Error('La ruta alternativa no contiene suficientes puntos para dibujarla.');
+          }
+
+          leafletMap = L.map(mapRef.current).setView(geometry[0], 13);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors',
+          }).addTo(leafletMap);
+
+          const routeLine = L.polyline(geometry, {
+            color: '#059669',
+            opacity: 0.9,
+            weight: 5,
+          }).addTo(leafletMap);
+          leafletMap.fitBounds(routeLine.getBounds(), { padding: [20, 20] });
+          return;
+        }
+
         const maps = await loadGoogleMapsApi();
         if (cancelled) return;
 
@@ -37,25 +69,6 @@ const DeliveryRoutePreview = ({ routeEstimate }) => {
           fullscreenControl: false,
           mapId: 'DEMO_MAP_ID',
         });
-
-        if (routeEstimate.osrmGeometry?.length) {
-          if (typeof maps.Polyline !== 'function' || typeof maps.LatLngBounds !== 'function') {
-            throw new Error('Google Maps no pudo dibujar la ruta alternativa.');
-          }
-
-          const polyline = new maps.Polyline({
-            map,
-            path: routeEstimate.osrmGeometry,
-            strokeColor: '#059669',
-            strokeOpacity: 0.9,
-            strokeWeight: 5,
-          });
-          const bounds = new maps.LatLngBounds();
-          routeEstimate.osrmGeometry.forEach(point => bounds.extend(point));
-          map.fitBounds(bounds);
-          mapPolylines = [polyline];
-          return;
-        }
 
         if (routeEstimate.directionsResult) {
           let DirectionsRenderer = maps.DirectionsRenderer;
@@ -103,6 +116,7 @@ const DeliveryRoutePreview = ({ routeEstimate }) => {
       cancelled = true;
       mapPolylines.forEach(polyline => polyline.setMap(null));
       directionsRenderer?.setMap(null);
+      leafletMap?.remove();
     };
   }, [routeEstimate]);
 

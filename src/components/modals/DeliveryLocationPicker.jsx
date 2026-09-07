@@ -2,39 +2,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Loader2, MapPin, MousePointerClick, Search } from 'lucide-react';
 import {
   loadGoogleMapsApi,
+  loadOpenStreetMapApi,
   reverseGeocodeWithOpenStreetMap,
   searchAddressesWithOpenStreetMap,
 } from '@/lib/googleMapsClient';
 
 const DEFAULT_CENTER = { lat: -10.5, lng: -76.5667 };
-let leafletLoaderPromise;
-
-const loadLeaflet = () => {
-  if (window.L) return Promise.resolve(window.L);
-  if (leafletLoaderPromise) return leafletLoaderPromise;
-
-  leafletLoaderPromise = new Promise((resolve, reject) => {
-    const cssId = 'leaflet-css';
-    if (!document.getElementById(cssId)) {
-      const css = document.createElement('link');
-      css.id = cssId;
-      css.rel = 'stylesheet';
-      css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      document.head.appendChild(css);
-    }
-
-    const script = document.createElement('script');
-    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-    script.async = true;
-    script.onload = () => window.L
-      ? resolve(window.L)
-      : reject(new Error('No se pudo cargar el mapa gratuito.'));
-    script.onerror = () => reject(new Error('No se pudo cargar el mapa gratuito.'));
-    document.head.appendChild(script);
-  });
-
-  return leafletLoaderPromise;
-};
 
 const getLatLng = (latLng) => ({
   lat: typeof latLng.lat === 'function' ? latLng.lat() : latLng.lat,
@@ -153,7 +126,7 @@ const DeliveryLocationPicker = ({ selectedLocation, onLocationChange }) => {
     };
 
     const initializeLeafletMap = async () => {
-      const L = await loadLeaflet();
+      const L = await loadOpenStreetMapApi();
       if (!active) return;
 
       const initialPosition = selectedLocation || DEFAULT_CENTER;

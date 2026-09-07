@@ -1,6 +1,7 @@
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
 let mapsLoaderPromise;
+let leafletLoaderPromise;
 
 const normalizeCoordinates = (coordinates) => {
   if (!coordinates) return null;
@@ -48,6 +49,46 @@ export const loadGoogleMapsApi = () => {
   });
 
   return mapsLoaderPromise;
+};
+
+/**
+ * Carga Leaflet una sola vez para que los mapas alternativos no dependan de
+ * una clave o de APIs habilitadas en Google Maps.
+ */
+export const loadOpenStreetMapApi = () => {
+  if (window.L) return Promise.resolve(window.L);
+  if (leafletLoaderPromise) return leafletLoaderPromise;
+
+  leafletLoaderPromise = new Promise((resolve, reject) => {
+    const cssId = 'leaflet-css';
+    if (!document.getElementById(cssId)) {
+      const css = document.createElement('link');
+      css.id = cssId;
+      css.rel = 'stylesheet';
+      css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      document.head.appendChild(css);
+    }
+
+    const scriptId = 'leaflet-js';
+    const existingScript = document.getElementById(scriptId);
+    if (existingScript) {
+      existingScript.addEventListener('load', () => resolve(window.L), { once: true });
+      existingScript.addEventListener('error', () => reject(new Error('No se pudo cargar el mapa gratuito.')), { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.id = scriptId;
+    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    script.async = true;
+    script.onload = () => window.L
+      ? resolve(window.L)
+      : reject(new Error('No se pudo cargar el mapa gratuito.'));
+    script.onerror = () => reject(new Error('No se pudo cargar el mapa gratuito.'));
+    document.head.appendChild(script);
+  });
+
+  return leafletLoaderPromise;
 };
 
 const calculateWithDirectionsService = (maps, { origin, destination, originCoordinates, destinationCoordinates }) => new Promise((resolve, reject) => {
