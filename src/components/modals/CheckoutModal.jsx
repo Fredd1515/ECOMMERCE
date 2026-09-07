@@ -60,9 +60,6 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
   
   const shippingCost = (subtotal - discountAmount) >= 50 ? 0 : 8.00;
   const finalTotal = (subtotal - discountAmount) + shippingCost;
-  const deliveryDestination = [shippingData.address, shippingData.city, 'Perú']
-    .filter(Boolean)
-    .join(', ');
 
   useEffect(() => {
     setRouteEstimate(null);
@@ -76,17 +73,12 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
     }
   };
 
-  const handleLocationChange = ({ lat, lng, address, city }) => {
-    setSelectedLocation({ lat, lng, address, city });
-    setShippingData(prev => ({
-      ...prev,
-      address: address || prev.address,
-      city: city || prev.city,
-    }));
-  };
+  const handleCalculateRoute = async (routeInput = {}) => {
+    const address = routeInput.address ?? shippingData.address;
+    const city = routeInput.city ?? shippingData.city;
+    const destinationCoordinates = routeInput.destinationCoordinates ?? selectedLocation;
 
-  const handleCalculateRoute = async () => {
-    if (!shippingData.address || !shippingData.city) {
+    if (!address || !city) {
       setRouteError('Ingresa la dirección y ciudad para calcular la ruta.');
       return null;
     }
@@ -97,9 +89,9 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
     try {
       const estimate = await calculateDeliveryRoute({
         origin: PHARMACY_ORIGIN,
-        destination: deliveryDestination,
+        destination: [address, city, 'Perú'].filter(Boolean).join(', '),
         originCoordinates: PHARMACY_ORIGIN_COORDINATES,
-        destinationCoordinates: selectedLocation,
+        destinationCoordinates,
       });
       setRouteEstimate(estimate);
       return estimate;
@@ -110,6 +102,25 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
       return null;
     } finally {
       setRouteLoading(false);
+    }
+  };
+
+  const handleLocationChange = ({ lat, lng, address, city, source }) => {
+    const nextAddress = address || shippingData.address;
+    const nextCity = city || shippingData.city;
+    setSelectedLocation({ lat, lng, address, city });
+    setShippingData(prev => ({
+      ...prev,
+      address: address || prev.address,
+      city: city || prev.city,
+    }));
+
+    if (source === 'current') {
+      void handleCalculateRoute({
+        address: nextAddress,
+        city: nextCity,
+        destinationCoordinates: { lat, lng },
+      });
     }
   };
 

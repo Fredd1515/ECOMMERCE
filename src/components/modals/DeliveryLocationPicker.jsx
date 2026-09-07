@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, MapPin, MousePointerClick, Search } from 'lucide-react';
+import { Loader2, MapPin, MousePointerClick, Navigation, Search } from 'lucide-react';
 import {
   loadGoogleMapsApi,
   loadOpenStreetMapApi,
@@ -22,6 +22,7 @@ const DeliveryLocationPicker = ({ selectedLocation, onLocationChange }) => {
   const selectionHandlerRef = useRef(null);
   const [mapLoading, setMapLoading] = useState(true);
   const [selecting, setSelecting] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [addressQuery, setAddressQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -33,6 +34,7 @@ const DeliveryLocationPicker = ({ selectedLocation, onLocationChange }) => {
 
     const emitSelection = async (position, updateMarker) => {
       const coordinates = getLatLng(position);
+      const source = position?.source;
       setSelecting(true);
       setError('');
 
@@ -44,6 +46,7 @@ const DeliveryLocationPicker = ({ selectedLocation, onLocationChange }) => {
           ...coordinates,
           address: address.displayName,
           city: address.city,
+          source,
         });
       } catch (selectionError) {
         console.warn('No se pudo obtener la dirección del mapa:', selectionError);
@@ -52,6 +55,7 @@ const DeliveryLocationPicker = ({ selectedLocation, onLocationChange }) => {
           ...coordinates,
           address: `Ubicación seleccionada (${coordinates.lat.toFixed(6)}, ${coordinates.lng.toFixed(6)})`,
           city: selectedLocation?.city || 'Pasco',
+          source,
         });
         setError('Se guardó la ubicación, pero no se pudo convertir en una dirección.');
       } finally {
@@ -228,6 +232,53 @@ const DeliveryLocationPicker = ({ selectedLocation, onLocationChange }) => {
     }
   };
 
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setError('Este navegador no permite obtener tu ubicación actual.');
+      return;
+    }
+
+    if (!selectionHandlerRef.current) {
+      setError('Espera a que el mapa termine de cargar.');
+      return;
+    }
+
+    setLocating(true);
+    setError('');
+
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        try {
+          setAddressQuery('');
+          await selectionHandlerRef.current({
+            lat: coords.latitude,
+            lng: coords.longitude,
+            source: 'current',
+          });
+        } catch (locationError) {
+          console.error('Error usando la ubicación actual:', locationError);
+          setError('No se pudo usar tu ubicación actual. Intenta seleccionar un punto en el mapa.');
+        } finally {
+          setLocating(false);
+        }
+      },
+      locationError => {
+        const messages = {
+          1: 'Permite el acceso a tu ubicación en el navegador para usar esta función.',
+          2: 'No pudimos determinar tu ubicación. Comprueba el GPS o la conexión.',
+          3: 'La búsqueda de ubicación tardó demasiado. Intenta nuevamente.',
+        };
+        setLocating(false);
+        setError(messages[locationError.code] || 'No se pudo obtener tu ubicación actual.');
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 60000,
+      }
+    );
+  };
+
   return (
     <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 space-y-3">
       <div className="flex items-start gap-3">
@@ -282,6 +333,19 @@ const DeliveryLocationPicker = ({ selectedLocation, onLocationChange }) => {
           </div>
         )}
       </form>
+
+      <button
+        type="button"
+        onClick={handleUseCurrentLocation}
+        disabled={mapLoading || locating || selecting}
+        className="w-full rounded-xl border border-indigo-300 bg-white hover:bg-indigo-50 disabled:opacity-60 text-indigo-700 px-4 py-2.5 text-sm font-semibold flex items-center justify-center gap-2"
+      >
+        {locating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
+        {locating ? 'Obteniendo ubicación...' : 'Usar mi ubicación actual'}
+      </button>
+      <p className="text-[11px] text-indigo-700">
+        Solo se solicitará permiso cuando pulses el botón. La ubicación se usará como destino de entrega.
+      </p>
 
       <div className="relative overflow-hidden rounded-xl border border-indigo-200 bg-indigo-100">
         <div ref={mapElementRef} className="h-64 w-full" aria-label="Selector de ubicación de entrega" />
