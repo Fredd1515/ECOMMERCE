@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, CheckCircle, CreditCard, QrCode, Truck, ShieldCheck, 
@@ -6,6 +6,19 @@ import {
 } from 'lucide-react';
 import { Button, toast } from '@/components/ui';
 import { createOrder, updateCustomerBehavior } from '@/lib/datawarehouseQueries';
+import {
+  calculateDeliveryRoute,
+  formatDistance,
+  formatDuration,
+} from '@/lib/googleMapsClient';
+import DeliveryRoutePreview from './DeliveryRoutePreview';
+import DeliveryLocationPicker from './DeliveryLocationPicker';
+
+const PHARMACY_ORIGIN = import.meta.env.VITE_PHARMACY_ORIGIN || 'Jr. Jorge Chávez S/N, Plaza Principal, Yanahuanca, Daniel Alcides Carrión, Pasco, Perú 19001';
+const PHARMACY_ORIGIN_COORDINATES = {
+  lat: Number(import.meta.env.VITE_PHARMACY_ORIGIN_LAT || -10.5),
+  lng: Number(import.meta.env.VITE_PHARMACY_ORIGIN_LNG || -76.5667),
+};
 
 const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) => {
   const [step, setStep] = useState(1); // 1: Datos de Entrega, 2: Pago, 3: Éxito
@@ -32,6 +45,10 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
 
   // Datos de Yape / Plin
   const [yapeCode, setYapeCode] = useState('');
+  const [selectedLocation, setSelectedLocation] = useState(null);
+  const [routeEstimate, setRouteEstimate] = useState(null);
+  const [routeLoading, setRouteLoading] = useState(false);
+  const [routeError, setRouteError] = useState('');
 
   // Cálculos de montos
   const subtotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0);
@@ -43,6 +60,58 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
   
   const shippingCost = (subtotal - discountAmount) >= 50 ? 0 : 8.00;
   const finalTotal = (subtotal - discountAmount) + shippingCost;
+  const deliveryDestination = [shippingData.address, shippingData.city, 'Perú']
+    .filter(Boolean)
+    .join(', ');
+
+  useEffect(() => {
+    setRouteEstimate(null);
+    setRouteError('');
+  }, [shippingData.address, shippingData.city]);
+
+  const handleShippingFieldChange = (field, value) => {
+    setShippingData({ ...shippingData, [field]: value });
+    if (field === 'address' || field === 'city') {
+      setSelectedLocation(null);
+    }
+  };
+
+  const handleLocationChange = ({ lat, lng, address, city }) => {
+    setSelectedLocation({ lat, lng, address, city });
+    setShippingData(prev => ({
+      ...prev,
+      address: address || prev.address,
+      city: city || prev.city,
+    }));
+  };
+
+  const handleCalculateRoute = async () => {
+    if (!shippingData.address || !shippingData.city) {
+      setRouteError('Ingresa la dirección y ciudad para calcular la ruta.');
+      return null;
+    }
+
+    setRouteLoading(true);
+    setRouteError('');
+
+    try {
+      const estimate = await calculateDeliveryRoute({
+        origin: PHARMACY_ORIGIN,
+        destination: deliveryDestination,
+        originCoordinates: PHARMACY_ORIGIN_COORDINATES,
+        destinationCoordinates: selectedLocation,
+      });
+      setRouteEstimate(estimate);
+      return estimate;
+    } catch (error) {
+      console.error('Error calculando ruta de delivery:', error);
+      setRouteEstimate(null);
+      setRouteError(error.message || 'No se pudo calcular la ruta de entrega.');
+      return null;
+    } finally {
+      setRouteLoading(false);
+    }
+  };
 
   // Formateador de tarjeta de crédito
   const handleCardNumberChange = (e) => {
@@ -64,6 +133,16 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
       toast({
         title: "Datos incompletos",
         description: "Por favor ingresa la dirección y teléfono de entrega.",
+        variant: "destructive"
+      });
+      setStep(1);
+      return;
+    }
+
+    if (!routeEstimate) {
+      toast({
+        title: "Calcula la ruta de entrega",
+        description: "Verifica la dirección para conocer la distancia y el tiempo estimado.",
         variant: "destructive"
       });
       setStep(1);
@@ -102,6 +181,7 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
         status: 'processing',
         payment_method: paymentMethod,
         payment_status: paymentMethod === 'cash' ? 'pending' : 'completed',
+        notes: 'Delivery desde ' + PHARMACY_ORIGIN + '. Distancia estimada: ' + formatDistance(routeEstimate.distanceMeters) + '. Tiempo de traslado estimado: ' + formatDuration(routeEstimate.durationMillis) + '.',
         shipping_address: `${shippingData.address}, ${shippingData.city} ${shippingData.reference ? `(Ref: ${shippingData.reference})` : ''} - Tel: ${shippingData.phone}`,
         order_date: new Date().toISOString()
       };
@@ -201,7 +281,7 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
             </div>
             <div 
               onClick={() => {
-                if (shippingData.address && shippingData.phone) setStep(2);
+                if (shippingData.address && shippingData.phone && routeEstimate) setStep(2);
               }}
               className={`flex-1 py-3 text-center cursor-pointer border-b-2 transition-all flex items-center justify-center gap-2 ${
                 step === 2 ? 'border-green-600 text-green-700 bg-white font-bold' : 'border-transparent text-gray-500 hover:text-gray-800'
@@ -266,7 +346,7 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
                     type="text"
                     required
                     value={shippingData.city}
-                    onChange={(e) => setShippingData({ ...shippingData, city: e.target.value })}
+                    onChange={(e) => handleShippingFieldChange('city', e.target.value)}
                     placeholder="Ej. Lima, Cerro de Pasco"
                     className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-600 outline-none"
                   />
@@ -276,12 +356,12 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
                   <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
                     Dirección Exacta (Calle, Avenida, Número) *
                   </label>
-                  <input
-                    type="text"
-                    required
-                    value={shippingData.address}
-                    onChange={(e) => setShippingData({ ...shippingData, address: e.target.value })}
-                    placeholder="Av. Los Rosales 1234, Dpto 402"
+                    <input
+                      type="text"
+                      required
+                      value={shippingData.address}
+                      onChange={(e) => handleShippingFieldChange('address', e.target.value)}
+                      placeholder="Av. Los Rosales 1234, Dpto 402"
                     className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-600 outline-none"
                   />
                 </div>
@@ -300,6 +380,45 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
                 </div>
               </div>
 
+              <DeliveryLocationPicker
+                selectedLocation={selectedLocation}
+                onLocationChange={handleLocationChange}
+              />
+
+              <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="font-bold text-blue-900 text-sm">Calcula tu ruta de delivery</h4>
+                    <p className="text-xs text-blue-800 mt-1">
+                      Origen: {PHARMACY_ORIGIN}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={handleCalculateRoute}
+                    disabled={routeLoading || !shippingData.address || !shippingData.city}
+                    className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-3 py-2 text-xs font-semibold"
+                  >
+                    {routeLoading ? (
+                      <span className="flex items-center gap-1.5">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Calculando...
+                      </span>
+                    ) : (
+                      'Calcular ruta'
+                    )}
+                  </Button>
+                </div>
+
+                {routeError && (
+                  <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+                    {routeError}
+                  </p>
+                )}
+
+                <DeliveryRoutePreview routeEstimate={routeEstimate} />
+              </div>
+
               {/* Resumen Mini */}
               <div className="bg-emerald-50/60 p-4 rounded-2xl border border-emerald-100/80 flex items-center justify-between text-sm">
                 <div>
@@ -312,6 +431,14 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
                       toast({
                         title: "Completa los datos",
                         description: "Ingresa tu dirección y teléfono para continuar.",
+                        variant: "destructive"
+                      });
+                      return;
+                    }
+                    if (!routeEstimate) {
+                      toast({
+                        title: "Calcula la ruta primero",
+                        description: "Presiona «Calcular ruta» para verificar el tiempo de entrega.",
                         variant: "destructive"
                       });
                       return;
@@ -588,6 +715,18 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
                   <span className="text-gray-500">Dirección de Entrega:</span>
                   <span className="text-gray-800 font-medium text-right max-w-[200px] truncate">{shippingData.address}</span>
                 </div>
+                {routeEstimate && (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Distancia estimada:</span>
+                      <span className="text-gray-800 font-medium">{formatDistance(routeEstimate.distanceMeters)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Tiempo de traslado:</span>
+                      <span className="text-gray-800 font-medium">{formatDuration(routeEstimate.durationMillis)}</span>
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="pt-3 flex gap-3 max-w-md mx-auto">

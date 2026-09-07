@@ -6,6 +6,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+const GEMINI_MODEL = 'gemini-3.6-flash';
 
 /**
  * Construye el prompt de sistema con contexto de la farmacia y catálogo de productos
@@ -54,6 +55,28 @@ ${productList || 'Catálogo cargando...'}
 };
 
 /**
+ * Normaliza el historial al formato que acepta Gemini.
+ *
+ * Gemini exige que el primer contenido del historial tenga role "user".
+ * El frontend muestra un mensaje de bienvenida con role "assistant", por lo
+ * que debemos descartar cualquier mensaje del modelo que aparezca al inicio
+ * antes de crear la sesión de chat.
+ */
+const normalizeChatHistory = (history = []) => {
+  const normalized = history
+    .filter(msg => msg && typeof msg.content === 'string' && msg.content.trim())
+    .map(msg => ({
+      role: msg.role === 'assistant' || msg.role === 'model' ? 'model' : 'user',
+      parts: [{ text: msg.content.trim() }],
+    }));
+
+  const firstUserIndex = normalized.findIndex(msg => msg.role === 'user');
+  if (firstUserIndex === -1) return [];
+
+  return normalized.slice(firstUserIndex);
+};
+
+/**
  * Envía un mensaje al asistente y obtiene respuesta en streaming
  * @param {string} userMessage - Mensaje del usuario
  * @param {Array} history - Historial de conversación [{role, parts: [{text}]}]
@@ -70,12 +93,10 @@ export const sendMessageToGemini = async (userMessage, history = [], products = 
   const genAI = new GoogleGenerativeAI(API_KEY);
   
   const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-flash',
+    model: GEMINI_MODEL,
     systemInstruction: buildSystemPrompt(products, user),
     generationConfig: {
       maxOutputTokens: 500,
-      temperature: 0.7,
-      topP: 0.9,
     },
     safetySettings: [
       { category: 'HARM_CATEGORY_HARASSMENT',       threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
@@ -84,11 +105,10 @@ export const sendMessageToGemini = async (userMessage, history = [], products = 
     ]
   });
 
-  // Convertir historial al formato de Gemini
-  const chatHistory = history.slice(-10).map(msg => ({
-    role: msg.role,
-    parts: [{ text: msg.content }]
-  }));
+  // Convertir y validar el historial antes de crear la sesión.
+  // Se normaliza después de aplicar el límite porque el recorte también puede
+  // dejar un mensaje del modelo como primer elemento.
+  const chatHistory = normalizeChatHistory(history.slice(-10));
 
   const chat = model.startChat({ history: chatHistory });
 

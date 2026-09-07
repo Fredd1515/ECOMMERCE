@@ -99,7 +99,7 @@ const OrderTrackingModal = ({ onClose, orders = [] }) => {
                         </p>
                         {order.payment_status && (
                           <p className="text-xs text-gray-500 mt-1">
-                            Pago: {order.payment_status === 'paid' ? 'Pagado' : 'Pendiente'}
+                            Pago: {['paid', 'completed', 'succeeded'].includes(order.payment_status) ? 'Pagado' : 'Pendiente'}
                           </p>
                         )}
                       </div>

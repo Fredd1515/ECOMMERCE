@@ -17,6 +17,15 @@ const STATUS_CONFIG = {
   cancelled:  { label: 'Cancelado',   color: 'bg-red-100   text-red-800    border-red-200',     dot: 'bg-red-400',    icon: XCircle     },
 };
 
+const STATUS_FLOW = ['pending', 'processing', 'shipped', 'delivered'];
+
+const getNextStatus = (status) => {
+  const currentIndex = STATUS_FLOW.indexOf(status);
+  return currentIndex >= 0 && currentIndex < STATUS_FLOW.length - 1
+    ? STATUS_FLOW[currentIndex + 1]
+    : null;
+};
+
 const PAYMENT_LABELS = { card: '💳 Tarjeta', yape: '📱 Yape/Plin', cash: '💵 Efectivo' };
 
 const StatusBadge = ({ status }) => {
@@ -27,6 +36,40 @@ const StatusBadge = ({ status }) => {
       <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
       {cfg.label}
     </span>
+  );
+};
+
+const StatusTimeline = ({ status }) => {
+  const currentIndex = STATUS_FLOW.indexOf(status);
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-3">
+      <div className="text-xs font-bold text-gray-700 mb-3">Flujo del pedido</div>
+      <div className="flex items-center">
+        {STATUS_FLOW.map((step, index) => {
+          const StepIcon = STATUS_CONFIG[step].icon;
+          const completed = currentIndex >= index;
+          return (
+            <React.Fragment key={step}>
+              <div className="flex flex-col items-center min-w-[70px]">
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center ${completed ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-400'}`}>
+                  <StepIcon className="w-3.5 h-3.5" />
+                </div>
+                <span className={`text-[10px] mt-1 text-center ${completed ? 'text-blue-700 font-semibold' : 'text-gray-400'}`}>
+                  {STATUS_CONFIG[step].label}
+                </span>
+              </div>
+              {index < STATUS_FLOW.length - 1 && (
+                <div className={`h-1 flex-1 mx-1 rounded-full ${currentIndex > index ? 'bg-blue-600' : 'bg-gray-100'}`} />
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+      {status === 'cancelled' && (
+        <p className="text-xs text-red-600 font-semibold mt-2">Este pedido fue cancelado.</p>
+      )}
+    </div>
   );
 };
 
@@ -272,6 +315,16 @@ const OrdersManagement = ({ onUpdateOrder }) => {
                             <RefreshCw className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 animate-spin text-blue-500" />
                           )}
                         </div>
+                        {getNextStatus(order.status) && (
+                          <button
+                            type="button"
+                            disabled={savingId === order.id}
+                            onClick={() => handleStatusChange(order.id, getNextStatus(order.status))}
+                            className="block mx-auto mt-1 text-[10px] font-semibold text-blue-700 hover:text-blue-900 disabled:opacity-50"
+                          >
+                            Avanzar a {STATUS_CONFIG[getNextStatus(order.status)].label}
+                          </button>
+                        )}
                       </td>
 
                       {/* Expand Details */}
@@ -296,6 +349,9 @@ const OrdersManagement = ({ onUpdateOrder }) => {
                           exit={{ opacity: 0 }}
                         >
                           <td colSpan={8} className="bg-blue-50/40 px-6 py-4">
+                            <div className="mb-4">
+                              <StatusTimeline status={order.status} />
+                            </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                               {/* Items */}
                               <div>

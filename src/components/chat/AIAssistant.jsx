@@ -4,7 +4,7 @@ import {
   X, Send, Bot, User, Loader2, Sparkles, Pill, AlertTriangle,
   ChevronDown, RefreshCw, Mic, Volume2
 } from 'lucide-react';
-import { sendMessageToGemini, isGeminiConfigured } from '@/lib/geminiClient';
+import { sendMessageToGroq, isGroqConfigured, GROQ_MODEL } from '@/lib/groqClient';
 
 // ── Quick suggestion chips ──────────────────────────────────────────────────
 const QUICK_SUGGESTIONS = [
@@ -87,7 +87,7 @@ const AIAssistant = ({ products = [], user = null, profile = null }) => {
   const [hasUnread, setHasUnread] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
-  const configured = isGeminiConfigured();
+  const configured = isGroqConfigured();
 
   // Welcome message on first open
   useEffect(() => {
@@ -134,16 +134,16 @@ const AIAssistant = ({ products = [], user = null, profile = null }) => {
     setMessages(prev => [...prev, botMsg]);
 
     try {
-      if (!configured) throw new Error('API key de Gemini no configurada. Agrega VITE_GEMINI_API_KEY en tu archivo .env.local');
+      if (!configured) throw new Error('API key de Groq no configurada. Agrega VITE_GROQ_API_KEY en tu archivo .env.local');
 
       // Build history (exclude current user message and streaming placeholder)
       const history = messages
         .filter(m => m.role === 'user' || m.role === 'assistant')
         .filter(m => !m.streaming)
-        .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', content: m.content }));
+        .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
 
       let accumulated = '';
-      await sendMessageToGemini(
+      await sendMessageToGroq(
         userText,
         history,
         products,
@@ -242,7 +242,7 @@ const AIAssistant = ({ products = [], user = null, profile = null }) => {
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
                   <span className="text-emerald-100 text-[11px]">
-                    {configured ? 'En línea · Powered by Gemini' : 'API Key requerida'}
+                    {configured ? 'En línea · Powered by Groq' : 'API Key requerida'}
                   </span>
                 </div>
               </div>
@@ -268,8 +268,8 @@ const AIAssistant = ({ products = [], user = null, profile = null }) => {
               <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <p className="text-xs text-amber-800">
-                  Agrega <code className="bg-amber-100 px-1 rounded text-[11px]">VITE_GEMINI_API_KEY</code> en <code className="bg-amber-100 px-1 rounded text-[11px]">.env.local</code> para activar el chat IA.{' '}
-                  <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="font-bold underline">Obtener gratis →</a>
+                  Agrega <code className="bg-amber-100 px-1 rounded text-[11px]">VITE_GROQ_API_KEY</code> en <code className="bg-amber-100 px-1 rounded text-[11px]">.env.local</code> para activar el chat IA.{' '}
+                  <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className="font-bold underline">Obtener gratis →</a>
                 </p>
               </div>
             )}
@@ -325,7 +325,7 @@ const AIAssistant = ({ products = [], user = null, profile = null }) => {
                 <Pill className="w-3 h-3" />
                 <span>{products.filter(p => p.is_active !== false).length} productos en catálogo</span>
               </div>
-              <span className="text-[10px] text-gray-300">Gemini 1.5 Flash</span>
+              <span className="text-[10px] text-gray-300">Groq · {GROQ_MODEL}</span>
             </div>
 
             {/* Input Area */}

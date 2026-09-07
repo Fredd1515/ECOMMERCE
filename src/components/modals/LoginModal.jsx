@@ -34,7 +34,7 @@ const LoginModal = ({ onClose, onLoginSuccess }) => {
         setLoading(false);
         return;
       }
-      const { error } = await signUp(formData.email, formData.password, {
+      const { error, data } = await signUp(formData.email, formData.password, {
         data: {
           first_name: formData.name.split(' ')[0] || formData.name,
           last_name: formData.name.split(' ').slice(1).join(' ') || ''
@@ -42,8 +42,7 @@ const LoginModal = ({ onClose, onLoginSuccess }) => {
       });
       if (error) {
         toast({ title: "Error en el registro", description: error.message, variant: "destructive" });
-      } else {
-        toast({ title: "¡Registro exitoso!", description: "Revisa tu correo para confirmar tu cuenta." });
+      } else if (data?.session) {
         onLoginSuccess();
       }
     }

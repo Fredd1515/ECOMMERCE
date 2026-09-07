@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui';
-import { upsertProfile, updateCustomerBehavior } from '@/lib/datawarehouseQueries';
+import { updateCustomerBehavior } from '@/lib/datawarehouseQueries';
 
 const AuthContext = createContext(undefined);
 
@@ -54,32 +54,28 @@ export const AuthProvider = ({ children }) => {
       }
 
       if (data.user && data.session) {
-        // Actualizar el estado inmediatamente si hay sesión
+        // El registro sin confirmación de correo entrega la sesión inmediatamente.
         await handleSession(data.session);
-        
-        // Crear perfil en el datawarehouse (no bloqueante)
-        upsertProfile({
-          id: data.user.id,
-          email: email,
-          first_name: options?.data?.first_name || '',
-          last_name: options?.data?.last_name || '',
-          role: 'customer',
-          created_at: new Date().toISOString()
-        }).catch(err => console.log('Error creating profile:', err));
-        
+
         toast({
-          title: "¡Registro exitoso!",
-          description: data.session ? "Cuenta creada correctamente." : "Revisa tu correo para confirmar tu cuenta.",
+          title: "¡Cuenta creada!",
+          description: "Tu cuenta fue creada y ya has iniciado sesión.",
         });
       } else if (data.user) {
-        // Usuario creado pero necesita confirmar email
+        const confirmationError = new Error(
+          'El registro está esperando confirmación de correo. Desactiva "Confirm email" en Supabase para usar acceso inmediato.'
+        );
+
         toast({
-          title: "¡Registro exitoso!",
-          description: "Revisa tu correo para confirmar tu cuenta.",
+          variant: "destructive",
+          title: "Configuración pendiente",
+          description: confirmationError.message,
         });
+
+        return { data, error: confirmationError, needsEmailConfirmation: true };
       }
 
-      return { error: null };
+      return { data, error: null, needsEmailConfirmation: false };
     } catch (err) {
       console.error('Error en signUp:', err);
       toast({
@@ -87,7 +83,7 @@ export const AuthProvider = ({ children }) => {
         title: "Error en el registro",
         description: err.message || "Ocurrió un error inesperado",
       });
-      return { error: err };
+      return { data: null, error: err, needsEmailConfirmation: false };
     }
   }, [toast, handleSession]);
 
