@@ -466,31 +466,10 @@ export const createOrder = async (orderData, orderItems) => {
       .insert(itemsWithOrderId)
       .select();
 
-    if (itemsError) {
-      console.warn('Error inserting order items:', itemsError);
-    }
+    if (itemsError) throw itemsError;
 
-    // 3. Descontar stock de cada producto en inventario
-    for (const item of orderItems) {
-      const prodId = item.product_id || item.id;
-      const qty = parseInt(item.quantity, 10) || 1;
-      if (prodId) {
-        // Obtener stock actual
-        const { data: prodData } = await supabase
-          .from('products')
-          .select('stock')
-          .eq('id', prodId)
-          .maybeSingle();
-
-        if (prodData && prodData.stock !== undefined) {
-          const newStock = Math.max(0, prodData.stock - qty);
-          await supabase
-            .from('products')
-            .update({ stock: newStock, updated_at: new Date().toISOString() })
-            .eq('id', prodId);
-        }
-      }
-    }
+    // El trigger de Supabase descuenta el stock de forma atómica al insertar
+    // cada artículo, sin exponer permisos de actualización sobre products.
 
     return {
       data: { ...order, order_items: items || [] },
