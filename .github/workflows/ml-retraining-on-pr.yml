@@ -1,0 +1,50 @@
+name: Reentrenamiento ML en Pull Request
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  retrain:
+    name: Entrenar y validar modelos
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar el código del PR
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements-ml.txt
+
+      - name: Instalar dependencias de Machine Learning
+        run: python -m pip install -r requirements-ml.txt
+
+      - name: Ejecutar reentrenamiento
+        run: python train_ml_pipeline.py
+
+      - name: Validar artefactos generados
+        shell: bash
+        run: |
+          test -s ml_models/forecast_model.pkl
+          test -s ml_models/kmeans_rfm.pkl
+          test -s ml_models/ml_insights.json
+          test -s src/data/ml_insights.json
+
+      - name: Publicar modelos e insights del entrenamiento
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-models-pr-${{ github.event.pull_request.number || 'manual' }}-${{ github.run_number }}
+          retention-days: 14
+          path: |
+            ml_models/forecast_model.pkl
+            ml_models/kmeans_rfm.pkl
+            ml_models/ml_insights.json
+            src/data/ml_insights.json
