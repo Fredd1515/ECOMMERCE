@@ -1,14 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Edit, Save, X, RefreshCw, Download, Users, Mail } from 'lucide-react';
-import { Button, toast } from '@/components/ui';
+import { Button, toast, Pagination } from '@/components/ui';
 import { getEmployees, createEmployee, updateEmployee } from '@/lib/datawarehouseQueries';
 
 const EmployeesManagement = () => {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const [editingEmployee, setEditingEmployee] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const PAGE_SIZE = 10;
+  const paginatedEmployees = employees.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  );
 
   useEffect(() => {
     loadEmployees();
@@ -237,7 +244,7 @@ const EmployeesManagement = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {employees.map((employee) => (
+              {paginatedEmployees.map((employee) => (
                 <tr key={employee.employee_id} className="hover:bg-gray-50">
                   <td className="px-6 py-4">
                     <div className="flex items-center">
@@ -304,6 +311,13 @@ const EmployeesManagement = () => {
             <p className="text-sm">Agrega tu primer empleado para comenzar</p>
           </div>
         )}
+
+        <Pagination
+          currentPage={currentPage}
+          totalItems={employees.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setCurrentPage}
+        />
       </motion.div>
 
       {/* Modal para crear/editar empleado */}

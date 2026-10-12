@@ -1,14 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Edit, Save, X, RefreshCw, Download, Truck, Phone, Mail } from 'lucide-react';
-import { Button, toast } from '@/components/ui';
+import { Button, toast, Pagination } from '@/components/ui';
 import { getDataWarehouseSuppliers, createSupplier, updateSupplier } from '@/lib/datawarehouseQueries';
 
 const SuppliersManagement = () => {
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const [editingSupplier, setEditingSupplier] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const PAGE_SIZE = 10;
+  const paginatedSuppliers = suppliers.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  );
 
   useEffect(() => {
     loadSuppliers();
@@ -249,7 +256,7 @@ const SuppliersManagement = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {suppliers.map((supplier) => (
+              {paginatedSuppliers.map((supplier) => (
                 <tr key={supplier.supplier_key || supplier.supplier_id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
@@ -324,6 +331,13 @@ const SuppliersManagement = () => {
             <p className="mt-2 text-gray-600">Cargando proveedores...</p>
           </div>
         )}
+
+        <Pagination
+          currentPage={currentPage}
+          totalItems={suppliers.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setCurrentPage}
+        />
       </motion.div>
 
       {/* Modal para crear/editar proveedor */}

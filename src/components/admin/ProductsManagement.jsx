@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Edit, Save, X, RefreshCw, Package, AlertTriangle, Search, Trash2, Tag, Check, Image as ImageIcon } from 'lucide-react';
-import { Button, toast } from '@/components/ui';
+import { Button, toast, Pagination } from '@/components/ui';
 import { getProductsWithAnalytics } from '@/lib/adminQueries';
 import { deleteProduct } from '@/lib/datawarehouseQueries';
 
@@ -20,9 +20,14 @@ const ProductsManagement = ({ onUpdateProduct, onCreateProduct }) => {
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
   const [editingProduct, setEditingProduct] = useState(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedCategoryFilter]);
 
   const initialNewProduct = {
     name: '',
@@ -177,6 +182,12 @@ const ProductsManagement = ({ onUpdateProduct, onCreateProduct }) => {
     return matchesCategory && matchesSearch;
   });
 
+  const PAGE_SIZE = 10;
+  const paginatedProducts = filteredProducts.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -263,7 +274,7 @@ const ProductsManagement = ({ onUpdateProduct, onCreateProduct }) => {
                   </td>
                 </tr>
               ) : (
-                filteredProducts.map((product) => (
+                paginatedProducts.map((product) => (
                   <tr key={product.id} className="hover:bg-blue-50/30 transition-colors">
                     {/* Producto */}
                     <td className="py-4 px-6">
@@ -371,6 +382,12 @@ const ProductsManagement = ({ onUpdateProduct, onCreateProduct }) => {
             </tbody>
           </table>
         </div>
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filteredProducts.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setCurrentPage}
+        />
       </div>
 
       {/* Modal de Edición de Producto */}
