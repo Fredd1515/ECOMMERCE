@@ -20,6 +20,7 @@ const SalesAnalytics = () => {
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState('30d');
   const [salesData, setSalesData] = useState([]);
+  const [dataSource, setDataSource] = useState('');
 
   useEffect(() => {
     loadSalesData();
@@ -36,10 +37,11 @@ const SalesAnalytics = () => {
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - daysBack);
 
-      const { data: salesAnalytics, error } = await getSalesByPeriod(
+      const { data: salesAnalytics, error, source } = await getSalesByPeriod(
         startDate.toISOString().split('T')[0],
         endDate.toISOString().split('T')[0]
       );
+      setDataSource(source || 'fact_sales + dim_products');
 
       console.log('[SalesAnalytics] Datos recibidos:', {
         cantidad: salesAnalytics?.length || 0,
@@ -99,7 +101,7 @@ const SalesAnalytics = () => {
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Análisis de Ventas</h2>
-          <p className="text-gray-600 mt-1">Análisis detallado de ventas y productos</p>
+          <p className="text-gray-600 mt-1">Análisis detallado de ventas y productos · Fuente: {dataSource || 'fact_sales + dim_products'}</p>
         </div>
 
         <div className="flex gap-3">

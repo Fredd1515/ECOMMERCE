@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Users, RefreshCw, Download, Mail, TrendingUp, ShoppingBag, DollarSign, UserCheck } from 'lucide-react';
-import { Button, toast } from '@/components/ui';
+import { Button, toast, Pagination } from '@/components/ui';
 import {
   BarChart,
   Bar,
@@ -24,8 +24,10 @@ const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'
 const CustomersManagement = () => {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const [customerSegments, setCustomerSegments] = useState([]);
   const [topCustomers, setTopCustomers] = useState([]);
+  const [dataSource, setDataSource] = useState('');
 
   useEffect(() => {
     loadCustomers();
@@ -34,7 +36,9 @@ const CustomersManagement = () => {
   const loadCustomers = async () => {
     setLoading(true);
     try {
-      const { data } = await getCustomerAnalytics(50);
+      // El KPI y el listado deben representar todos los clientes de dim_customers.
+      const { data, source } = await getCustomerAnalytics(10000);
+      setDataSource(source || 'fact_sales + dim_customers');
       if (data) {
         setCustomers(data);
         processCustomerData(data);
@@ -100,7 +104,7 @@ const CustomersManagement = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Análisis de Clientes</h2>
-          <p className="text-gray-600 mt-1">Estadísticas y comportamiento de tus clientes</p>
+          <p className="text-gray-600 mt-1">Estadísticas y comportamiento de tus clientes · Fuente: {dataSource || 'fact_sales + dim_customers'}</p>
         </div>
         <div className="flex gap-3">
           <Button
@@ -291,6 +295,70 @@ const CustomersManagement = () => {
           )}
         </motion.div>
       </div>
+
+      {/* Tabla de Clientes con Paginación de 10 */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white rounded-xl shadow-sm border overflow-hidden"
+      >
+        <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Listado de Clientes</h3>
+            <p className="text-sm text-gray-500 mt-0.5">{customers.length} clientes analizados</p>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Cliente</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Email</th>
+                <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Pedidos</th>
+                <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Total Gastado</th>
+                <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Segmento</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {customers.slice((currentPage - 1) * 10, currentPage * 10).map((c, idx) => {
+                const spent = c.total_spent || 0;
+                const segment = spent > 500 ? 'VIP' : spent >= 200 ? 'Premium' : spent >= 100 ? 'Regular' : 'Nuevo';
+                const badgeColor = spent > 500 ? 'bg-green-100 text-green-800' : spent >= 200 ? 'bg-blue-100 text-blue-800' : spent >= 100 ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-800';
+
+                return (
+                  <tr key={c.customer_id || idx} className="hover:bg-gray-50/50">
+                    <td className="px-6 py-3.5 font-medium text-gray-900">
+                      {c.full_name || 'Sin nombre'}
+                    </td>
+                    <td className="px-6 py-3.5 text-gray-500">
+                      {c.email || '—'}
+                    </td>
+                    <td className="px-6 py-3.5 text-center font-semibold text-gray-700">
+                      {c.total_orders || 0}
+                    </td>
+                    <td className="px-6 py-3.5 text-right font-bold text-gray-900">
+                      S/ {spent.toFixed(2)}
+                    </td>
+                    <td className="px-6 py-3.5 text-center">
+                      <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${badgeColor}`}>
+                        {segment}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <Pagination
+          currentPage={currentPage}
+          totalItems={customers.length}
+          pageSize={10}
+          onPageChange={setCurrentPage}
+        />
+      </motion.div>
     </div>
   );
 };

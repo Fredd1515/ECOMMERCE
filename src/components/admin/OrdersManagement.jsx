@@ -4,7 +4,7 @@ import {
   RefreshCw, Package, Clock, CheckCircle, Truck, XCircle,
   ChevronDown, ChevronUp, Search, Filter, Eye, AlertCircle
 } from 'lucide-react';
-import { Button, toast } from '@/components/ui';
+import { Button, toast, Pagination } from '@/components/ui';
 import { getAllOrdersWithDetails, getOrderStats } from '@/lib/adminQueries';
 import { updateOrderStatus } from '@/lib/datawarehouseQueries';
 
@@ -89,20 +89,34 @@ const OrdersManagement = ({ onUpdateOrder }) => {
   const [expandedId, setExpandedId] = useState(null);    // expanded row
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
   const [stats, setStats] = useState({ pending: 0, processing: 0, shipped: 0, delivered: 0, cancelled: 0, totalRevenue: 0 });
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, filterStatus]);
 
   // ── Load data ──────────────────────────────────────────────────────────────
   const loadOrders = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: ordersData }, { data: statsData }] = await Promise.all([
+      const [ordersResult, statsResult] = await Promise.all([
         getAllOrdersWithDetails(),
         getOrderStats()
       ]);
-      if (ordersData) setOrders(ordersData);
-      if (statsData)  setStats(statsData);
+
+      if (ordersResult.error) throw ordersResult.error;
+      if (statsResult.error) throw statsResult.error;
+      setOrders(ordersResult.data || []);
+      setStats(statsResult.data || { pending: 0, processing: 0, shipped: 0, delivered: 0, cancelled: 0, totalRevenue: 0 });
     } catch (err) {
-      toast({ title: 'Error al cargar pedidos', description: err.message, variant: 'destructive' });
+      setOrders([]);
+      setStats({ pending: 0, processing: 0, shipped: 0, delivered: 0, cancelled: 0, totalRevenue: 0 });
+      toast({
+        title: 'No se pudieron cargar los pedidos',
+        description: 'Revisa el acceso a fact_sales y las dimensiones del data warehouse.',
+        variant: 'destructive'
+      });
     } finally {
       setLoading(false);
     }
@@ -112,6 +126,14 @@ const OrdersManagement = ({ onUpdateOrder }) => {
 
   // ── Handle status change ────────────────────────────────────────────────────
   const handleStatusChange = async (orderId, newStatus) => {
+    const selectedOrder = orders.find((order) => order.id === orderId);
+    if (selectedOrder?.isWarehouse) {
+      toast({
+        title: 'Registro histórico en solo lectura',
+        description: 'El estado de fact_sales se actualiza desde el proceso de ventas, no desde este listado.'
+      });
+      return;
+    }
     setSavingId(orderId);
 
     // Optimistic update: change locally right away
@@ -126,10 +148,8 @@ const OrdersManagement = ({ onUpdateOrder }) => {
     });
 
     try {
-      // Call Supabase directly for reliability
       const { error } = await updateOrderStatus(orderId, newStatus);
       if (error) throw error;
-
       // Also notify parent App.jsx so its state stays in sync
       if (onUpdateOrder) onUpdateOrder(orderId, { status: newStatus });
 
@@ -155,6 +175,12 @@ const OrdersManagement = ({ onUpdateOrder }) => {
     const matchStatus = filterStatus === 'all' || o.status === filterStatus;
     return matchSearch && matchStatus;
   });
+
+  const PAGE_SIZE = 10;
+  const paginatedOrders = filtered.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  );
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -254,7 +280,7 @@ const OrdersManagement = ({ onUpdateOrder }) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filtered.map((order, idx) => (
+                {paginatedOrders.map((order, idx) => (
                   <React.Fragment key={order.id}>
                     <motion.tr
                       initial={{ opacity: 0, x: -10 }}
@@ -267,6 +293,9 @@ const OrdersManagement = ({ onUpdateOrder }) => {
                         <div className="font-mono text-xs font-bold text-blue-700 bg-blue-50 rounded-lg px-2 py-0.5 inline-block">
                           {order.order_code || `#${order.id?.substring(0, 8)}`}
                         </div>
+                        {order.isWarehouse && (
+                          <div className="text-[10px] text-indigo-600 font-semibold mt-1">fact_sales · histórico</div>
+                        )}
                         <div className="text-[11px] text-gray-400 mt-0.5">{(order.order_items?.length || 0)} ítem(s)</div>
                       </td>
 
@@ -301,11 +330,12 @@ const OrdersManagement = ({ onUpdateOrder }) => {
                         <div className="relative inline-block">
                           <select
                             value={order.status}
-                            disabled={savingId === order.id}
+                            disabled={savingId === order.id || order.isWarehouse}
                             onChange={e => handleStatusChange(order.id, e.target.value)}
+                            title={order.isWarehouse ? 'Registro histórico de fact_sales (solo lectura)' : 'Actualizar estado'}
                             className={`text-xs border-2 rounded-lg px-2 py-1.5 pr-6 outline-none cursor-pointer font-semibold transition-all ${
                               STATUS_CONFIG[order.status]?.color || 'border-gray-200 text-gray-700'
-                            } focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50 disabled:cursor-wait`}
+                            } focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed`}
                           >
                             {Object.entries(STATUS_CONFIG).map(([k, v]) => (
                               <option key={k} value={k}>{v.label}</option>
@@ -318,7 +348,7 @@ const OrdersManagement = ({ onUpdateOrder }) => {
                         {getNextStatus(order.status) && (
                           <button
                             type="button"
-                            disabled={savingId === order.id}
+                            disabled={savingId === order.id || order.isWarehouse}
                             onClick={() => handleStatusChange(order.id, getNextStatus(order.status))}
                             className="block mx-auto mt-1 text-[10px] font-semibold text-blue-700 hover:text-blue-900 disabled:opacity-50"
                           >
@@ -396,8 +426,8 @@ const OrdersManagement = ({ onUpdateOrder }) => {
                                   </div>
                                   <div className="flex justify-between">
                                     <span className="text-gray-500">Estado de Pago:</span>
-                                    <span className={`font-semibold ${order.payment_status === 'completed' ? 'text-green-600' : 'text-amber-600'}`}>
-                                      {order.payment_status === 'completed' ? '✅ Pagado' : '⏳ Pendiente'}
+                                    <span className={`font-semibold ${['completed', 'paid', 'pagado'].includes(String(order.payment_status).toLowerCase()) ? 'text-green-600' : 'text-amber-600'}`}>
+                                      {['completed', 'paid', 'pagado'].includes(String(order.payment_status).toLowerCase()) ? '✅ Pagado' : '⏳ Pendiente'}
                                     </span>
                                   </div>
                                 </div>
@@ -413,6 +443,12 @@ const OrdersManagement = ({ onUpdateOrder }) => {
             </table>
           </div>
         )}
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filtered.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setCurrentPage}
+        />
       </div>
     </div>
   );

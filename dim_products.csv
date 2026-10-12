@@ -1,0 +1,13 @@
+product_key,product_id,name,category_name,subcategory_name,brand,sku,unit_type,unit_size,prescription_required
+1,3305e132-ad65-445c-a9a2-833439813c7b,Ibuprofeno 400mg,Medicamentos,Antiinflamatorios,Bayer,MED-IBU-400,Caja x 10 cápsulas blandas,400mg,False
+2,a0b1eb7f-b6ad-4b29-89a5-5ccf109f2048,Amoxicilina 500mg,Medicamentos,Antibióticos,Pfizer,MED-AMX-500,Caja x 24 cápsulas,500mg,True
+3,018c2c07-4a60-4a8b-8c8c-945663b72176,Vitamina C 1000mg + Zinc,Vitaminas,Inmunidad,Redoxon,VIT-VITC-1000,Tubo x 15 tabletas efervescentes,1000mg,False
+4,e2558930-f614-427e-b9f3-fca477d6f786,Protector Solar Facial FPS 50+,Cuidado Personal,Dermatología,La Roche-Posay,DER-SOLAR-50,Frasco x 50ml,50ml,False
+5,ad54d7be-97cf-47cf-b636-c1233046bd4d,Alcohol en Gel Antibacterial 70%,Primeros Auxilios,Desinfección,Aval,AUX-ALC-70,Frasco dosificador x 500ml,500ml,False
+6,1d55fe49-a8bd-433f-a625-64bd3846ca5c,Pañales Hipoalergénicos Talla M,Bebés y Maternidad,Pañales,Huggies,BEB-PAN-M,Paquete x 40 unidades,Talla M,False
+7,3373d950-e90a-4245-ac51-e0d5a9867ddb,Complejo B Multivitamínico,Vitaminas,Suplementos,Bion3,VIT-COMP-B,Frasco x 60 tabletas,60 tab,False
+8,0b068393-7e82-437c-93b1-aca1372c3b9d,Jarabe para la Tos y Garganta,Medicamentos,Respiratorio,Abrilar,MED-JAR-TOS,Frasco x 120ml,120ml,False
+9,037822e6-dbf8-4676-a70f-958b2423e1fd,Crema Cicatrizante y Reparadora,Cuidado Personal,Cuidado de la Piel,Cicaplast,CUI-CRE-CIC,Tubo x 40g,40g,False
+10,1dae16df-5e61-41a6-b415-e58efec91d4f,Serum Ácido Hialurónico Hidratante,Cuidado Personal,Facial,Vichy,CUI-SER-HIAL,Frasco x 30ml,30ml,False
+11,367d1716-ded3-4ae0-9894-c3688e0a158f,Termómetro Digital Infrarrojo,Primeros Auxilios,Equipos Médicos,Omron,AUX-TERM-DIG,Unidad,1 ud,False
+12,f71f2a03-b9a0-4026-93d6-d4680f499d73,Paracetamol 500mg,Medicamentos,Analgésicos,Genfar,MED-PAR-500,Caja x 20 tabletas,500mg,False

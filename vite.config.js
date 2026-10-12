@@ -1,6 +1,73 @@
 import path from 'node:path';
 import react from '@vitejs/plugin-react';
-import { createLogger, defineConfig } from 'vite';
+import { createLogger, defineConfig, loadEnv } from 'vite';
+
+const localEnv = loadEnv('development', process.cwd(), '');
+const localGroqApiKey = localEnv.GROQ_API_KEY || process.env.GROQ_API_KEY || '';
+
+const localGroqProxy = {
+  name: 'local-groq-proxy',
+  configureServer(server) {
+    server.middlewares.use('/api/groq', async (req, res) => {
+      if (req.method !== 'POST') {
+        res.statusCode = 405;
+        res.setHeader('Allow', 'POST');
+        res.end(JSON.stringify({ error: { message: 'Method not allowed.' } }));
+        return;
+      }
+
+      if (!localGroqApiKey) {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: { message: 'GROQ_API_KEY no está configurada en .env.local.' } }));
+        return;
+      }
+
+      try {
+        const chunks = [];
+        for await (const chunk of req) chunks.push(chunk);
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+        const upstream = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${localGroqApiKey}`,
+          },
+          body: JSON.stringify({
+            model: body.model || 'openai/gpt-oss-120b',
+            messages: body.messages || [],
+            max_tokens: body.max_tokens || 650,
+            stream: Boolean(body.stream),
+          }),
+        });
+
+        res.statusCode = upstream.status;
+        res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json');
+
+        if (body.stream && upstream.body) {
+          res.setHeader('Cache-Control', 'no-cache, no-transform');
+          const reader = upstream.body.getReader();
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            res.write(Buffer.from(value));
+          }
+          res.end();
+          return;
+        }
+
+        res.end(await upstream.text());
+      } catch (error) {
+        console.error('Local Groq proxy error:', error);
+        if (!res.headersSent) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+        }
+        res.end(JSON.stringify({ error: { message: 'No se pudo conectar con Groq.' } }));
+      }
+    });
+  },
+};
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -202,6 +269,7 @@ export default defineConfig({
 	customLogger: logger,
 	plugins: [
 		react(),
+		localGroqProxy,
 		addTransformIndexHtml
 	],
 	server: {
