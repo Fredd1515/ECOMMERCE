@@ -1,52 +1,12 @@
 import { supabase } from './customSupabaseClient';
-import factSalesCsv from '../../fact_sales.csv?raw';
-import dimCustomersCsv from '../../dim_customers.csv?raw';
-import dimProductsCsv from '../../dim_products.csv?raw';
 
-const parseCsv = (text) => {
-  const rows = [];
-  let row = [];
-  let value = '';
-  let quoted = false;
-
-  for (let index = 0; index < text.length; index += 1) {
-    const character = text[index];
-    const nextCharacter = text[index + 1];
-    if (character === '"' && quoted && nextCharacter === '"') {
-      value += '"';
-      index += 1;
-    } else if (character === '"') {
-      quoted = !quoted;
-    } else if (character === ',' && !quoted) {
-      row.push(value);
-      value = '';
-    } else if ((character === '\n' || character === '\r') && !quoted) {
-      if (character === '\r' && nextCharacter === '\n') index += 1;
-      row.push(value);
-      if (row.some((cell) => cell !== '')) rows.push(row);
-      row = [];
-      value = '';
-    } else {
-      value += character;
-    }
-  }
-
-  if (value || row.length > 0) {
-    row.push(value);
-    if (row.some((cell) => cell !== '')) rows.push(row);
-  }
-
-  const headers = rows.shift() || [];
-  return rows.map((cells) => headers.reduce((record, header, index) => {
-    record[header] = cells[index] ?? '';
-    return record;
-  }, {}));
-};
-
+// No incluir snapshots CSV con ventas o clientes en el bundle del navegador.
+// En desarrollo, si Supabase no tiene datos, el panel muestra vacío en vez de
+// exponer información administrativa local a usuarios no autorizados.
 const localSnapshot = {
-  sales: parseCsv(factSalesCsv),
-  customers: parseCsv(dimCustomersCsv),
-  products: parseCsv(dimProductsCsv)
+  sales: [],
+  customers: [],
+  products: []
 };
 
 const toNumber = (value) => {
@@ -347,12 +307,36 @@ export const getWarehouseCustomerAnalytics = async (limit = 10000) => {
 };
 
 export const getWarehouseOrders = async () => {
-  const { data: context, error, source } = await getWarehouseContext();
-  if (error) return { data: [], error, source };
+  // Se consultan ambas fuentes: fact_sales contiene el histórico y orders
+  // contiene pedidos pendientes que todavía no deben aparecer como ventas.
+  const [contextResult, ordersResult, itemsResult] = await Promise.all([
+    getWarehouseContext(),
+    fetchTable('orders'),
+    fetchTable('order_items')
+  ]);
 
+  if (contextResult.error && ordersResult.error) {
+    return { data: [], error: contextResult.error, source: 'orders + fact_sales' };
+  }
+
+  const context = contextResult.data || { sales: [], customers: [], products: [] };
   const productMap = new Map(context.products.map((product) => [String(product.product_key), product]));
   const customerMap = new Map(context.customers.map((customer) => [String(customer.customer_key), customer]));
   const orders = new Map();
+  const operationalItems = new Map();
+
+  (itemsResult.data || []).forEach((item) => {
+    const list = operationalItems.get(item.order_id) || [];
+    list.push({
+      id: item.id,
+      product_id: item.product_id,
+      product_name: item.product_name,
+      quantity: toNumber(item.quantity),
+      unit_price: toNumber(item.unit_price),
+      total_price: toNumber(item.total_price)
+    });
+    operationalItems.set(item.order_id, list);
+  });
 
   context.sales.forEach((sale) => {
     const orderId = sale.order_id || `warehouse-sale-${sale.sales_key}`;
@@ -395,14 +379,41 @@ export const getWarehouseOrders = async () => {
     orders.set(orderId, existing);
   });
 
+  // Los pedidos operativos tienen prioridad para mostrar pago pendiente,
+  // número de operación, dirección y los items reales del checkout.
+  (ordersResult.data || []).forEach((order) => {
+    const existing = orders.get(order.id);
+    const items = operationalItems.get(order.id) || existing?.order_items || [];
+    orders.set(order.id, {
+      ...existing,
+      ...order,
+      id: order.id,
+      status: normalizeStatus(order.status),
+      total_amount: toNumber(order.subtotal || order.final_amount),
+      subtotal: toNumber(order.subtotal),
+      discount: toNumber(order.discount),
+      discount_amount: toNumber(order.discount),
+      shipping_cost: toNumber(order.shipping_cost),
+      final_amount: toNumber(order.final_amount),
+      isWarehouse: false,
+      order_items: items
+    });
+  });
+
+  const source = [
+    contextResult.error ? null : 'fact_sales',
+    ordersResult.error ? null : 'orders'
+  ].filter(Boolean).join(' + ') || 'sin datos';
+
   return {
     data: Array.from(orders.values()).map((order) => ({
       ...order,
-      total_amount: Number(order.total_amount.toFixed(2)),
-      subtotal: Number(order.subtotal.toFixed(2)),
-      discount: Number(order.discount.toFixed(2)),
-      discount_amount: Number(order.discount_amount.toFixed(2)),
-      final_amount: Number(order.final_amount.toFixed(2))
+      total_amount: Number(toNumber(order.total_amount).toFixed(2)),
+      subtotal: Number(toNumber(order.subtotal).toFixed(2)),
+      discount: Number(toNumber(order.discount).toFixed(2)),
+      discount_amount: Number(toNumber(order.discount_amount).toFixed(2)),
+      shipping_cost: Number(toNumber(order.shipping_cost).toFixed(2)),
+      final_amount: Number(toNumber(order.final_amount).toFixed(2))
     })).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)),
     error: null,
     source

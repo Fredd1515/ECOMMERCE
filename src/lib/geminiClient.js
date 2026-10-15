@@ -1,137 +1,125 @@
 // =====================================================
-// CLIENTE DE GOOGLE GEMINI AI
-// Motor del Asistente Virtual Farmacéutico
+// CLIENTE DE GEMINI A TRAVÉS DE PUTER.JS
+// FarmaBot y el Orquestador usan Gemini sin API key propia.
+// Puter se carga mediante el CDN oficial antes de la aplicación.
 // =====================================================
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+export const GEMINI_MODEL = import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.8-flash';
 
-const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const GEMINI_MODEL = 'gemini-3.6-flash';
-
-/**
- * Construye el prompt de sistema con contexto de la farmacia y catálogo de productos
- */
-export const buildSystemPrompt = (products = [], user = null) => {
-  const productList = products
-    .filter(p => p.is_active !== false)
-    .slice(0, 60) // límite para no exceder el contexto
-    .map(p => {
-      const price = p.onSale && p.sale_price
-        ? `S/${p.sale_price} (oferta, antes S/${p.price})`
-        : `S/${p.price}`;
-      return `• ${p.name} — ${price} — Stock: ${p.stock || 0} uds — Categoría: ${p.category || 'General'} — ${p.prescription_required ? '⚠️ Requiere receta' : 'Sin receta'}`;
-    })
-    .join('\n');
-
-  const userName = user?.first_name ? `El cliente se llama ${user.first_name}.` : '';
-
-  return `Eres FarmaBot, el asistente virtual inteligente de Farmacia Digital. Eres un farmacéutico virtual profesional, amigable y empático que atiende clientes en Perú.
-
-${userName}
-
-## TU ROL
-- Ayudas a los clientes a encontrar medicamentos y productos de salud
-- Explicas de forma clara y sencilla para qué sirven los productos
-- Siempre recuerdas que NO reemplazas a un médico y que ante dudas graves deben consultar a un profesional
-- Respondes SIEMPRE en español peruano amigable
-- Eres conciso: máximo 3 párrafos por respuesta
-
-## CATÁLOGO ACTUAL DE PRODUCTOS DISPONIBLES EN STOCK
-${productList || 'Catálogo cargando...'}
-
-## REGLAS IMPORTANTES
-1. Si el cliente pregunta por un medicamento que requiere receta, recuérdale que necesita presentarla en farmacia
-2. Si el cliente tiene síntomas graves (dolor en el pecho, dificultad para respirar, etc.), SIEMPRE recomienda ir a emergencias
-3. Cuando recomiendes productos, menciona el precio exacto y si está en oferta
-4. Si el producto no está en el catálogo, dilo honestamente y sugiere alternativas
-5. Puedes hacer preguntas cortas para entender mejor lo que el cliente necesita
-6. Formato: usa emojis con moderación para ser más amigable, pero no en exceso
-
-## EJEMPLOS DE LO QUE PUEDES HACER
-- "Tengo dolor de cabeza" → recomendar analgésicos del catálogo con precios
-- "¿Tienen vitamina C?" → responder con el stock y precio exacto
-- "¿Para qué sirve el Paracetamol?" → explicar de forma clara
-- "Mi hijo tiene fiebre" → dar recomendaciones y recordar consultar al médico`;
+const getPuter = () => {
+  const client = typeof globalThis !== 'undefined' ? globalThis.puter : null;
+  if (!client?.ai?.chat) {
+    throw new Error('Puter.js no está disponible. Verifica la conexión al CDN https://js.puter.com/v2/.');
+  }
+  return client;
 };
 
-/**
- * Normaliza el historial al formato que acepta Gemini.
- *
- * Gemini exige que el primer contenido del historial tenga role "user".
- * El frontend muestra un mensaje de bienvenida con role "assistant", por lo
- * que debemos descartar cualquier mensaje del modelo que aparezca al inicio
- * antes de crear la sesión de chat.
- */
-const normalizeChatHistory = (history = []) => {
-  const normalized = history
-    .filter(msg => msg && typeof msg.content === 'string' && msg.content.trim())
-    .map(msg => ({
-      role: msg.role === 'assistant' || msg.role === 'model' ? 'model' : 'user',
-      parts: [{ text: msg.content.trim() }],
+const waitForPuter = async (timeoutMs = 15000) => {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    try {
+      return getPuter();
+    } catch {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+
+  return getPuter();
+};
+
+// Puter documenta ai.chat() con un prompt de texto, no con el formato
+// messages[] de OpenAI. Convertimos el contexto para evitar llamadas que
+// quedan pendientes sin producir contenido.
+const buildPuterPrompt = (systemPrompt, history = [], userMessage = '') => {
+  const historyText = history
+    .filter(message => message && typeof message.content === 'string' && message.content.trim())
+    .map(message => {
+      const role = message.role === 'assistant' || message.role === 'model'
+        ? 'Asistente'
+        : 'Usuario';
+      return `${role}: ${message.content.trim()}`;
+    })
+    .join('\n\n');
+
+  return [
+    'INSTRUCCIONES DEL AGENTE:',
+    systemPrompt.trim(),
+    historyText ? `HISTORIAL RELEVANTE:\n${historyText}` : '',
+    `CONSULTA ACTUAL:\n${userMessage.trim()}`,
+  ].filter(Boolean).join('\n\n');
+};
+
+const contentToText = (content) => {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map(part => typeof part === 'string' ? part : part?.text || part?.content || '')
+      .join('');
+  }
+  return content?.text || content?.content || '';
+};
+
+const responseToText = (response) => contentToText(response?.message?.content ?? response?.content ?? response);
+
+const normalizePuterError = (error) => {
+  if (error instanceof Error && error.message) return error;
+  if (typeof error === 'string' && error.trim()) return new Error(error);
+  const message = error?.message || error?.error?.message || 'Puter no pudo responder con Gemini.';
+  return new Error(String(message));
+};
+
+const consumePuterStream = async (stream, onChunk) => {
+  if (!stream || typeof stream[Symbol.asyncIterator] !== 'function') {
+    throw new Error('Puter no devolvió un stream de Gemini.');
+  }
+
+  let fullText = '';
+  for await (const part of stream) {
+    if (part?.type === 'error' || part?.error) {
+      throw normalizePuterError(part?.message || part?.error);
+    }
+
+    const chunk = contentToText(part?.text || part?.content || '');
+    if (chunk) {
+      fullText += chunk;
+      onChunk(chunk);
+    }
+  }
+
+  if (!fullText.trim()) throw new Error('Gemini devolvió una respuesta vacía mediante Puter.');
+  return fullText;
+};
+
+const withTimeout = (promise, timeoutMs = 60000) => Promise.race([
+  promise,
+  new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('Gemini tardó demasiado en responder mediante Puter.')), timeoutMs);
+  }),
+]);
+
+export const generateGeminiAgentResponse = async ({
+  systemPrompt,
+  history = [],
+  userMessage,
+  onChunk = null,
+  maxOutputTokens = 700,
+}) => {
+  try {
+    const client = await waitForPuter();
+    const response = await withTimeout(client.ai.chat(buildPuterPrompt(systemPrompt, history, userMessage), {
+      model: GEMINI_MODEL,
+      stream: Boolean(onChunk),
     }));
 
-  const firstUserIndex = normalized.findIndex(msg => msg.role === 'user');
-  if (firstUserIndex === -1) return [];
+    if (onChunk) return withTimeout(consumePuterStream(response, onChunk));
 
-  return normalized.slice(firstUserIndex);
-};
-
-/**
- * Envía un mensaje al asistente y obtiene respuesta en streaming
- * @param {string} userMessage - Mensaje del usuario
- * @param {Array} history - Historial de conversación [{role, parts: [{text}]}]
- * @param {Array} products - Catálogo de productos para contexto
- * @param {Object} user - Perfil del usuario actual
- * @param {Function} onChunk - Callback llamado con cada fragmento de texto recibido
- * @returns {Promise<string>} - Texto completo de la respuesta
- */
-export const sendMessageToGemini = async (userMessage, history = [], products = [], user = null, onChunk = null) => {
-  if (!API_KEY) {
-    throw new Error('VITE_GEMINI_API_KEY no configurada. Por favor agrega tu API key de Google en .env.local');
-  }
-
-  const genAI = new GoogleGenerativeAI(API_KEY);
-  
-  const model = genAI.getGenerativeModel({
-    model: GEMINI_MODEL,
-    systemInstruction: buildSystemPrompt(products, user),
-    generationConfig: {
-      maxOutputTokens: 500,
-    },
-    safetySettings: [
-      { category: 'HARM_CATEGORY_HARASSMENT',       threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-      { category: 'HARM_CATEGORY_HATE_SPEECH',      threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT',threshold: 'BLOCK_ONLY_HIGH' },
-    ]
-  });
-
-  // Convertir y validar el historial antes de crear la sesión.
-  // Se normaliza después de aplicar el límite porque el recorte también puede
-  // dejar un mensaje del modelo como primer elemento.
-  const chatHistory = normalizeChatHistory(history.slice(-10));
-
-  const chat = model.startChat({ history: chatHistory });
-
-  if (onChunk) {
-    // Streaming mode
-    const result = await chat.sendMessageStream(userMessage);
-    let fullText = '';
-    for await (const chunk of result.stream) {
-      const chunkText = chunk.text();
-      fullText += chunkText;
-      onChunk(chunkText);
-    }
-    return fullText;
-  } else {
-    // Non-streaming mode
-    const result = await chat.sendMessage(userMessage);
-    return result.response.text();
+    const content = responseToText(response);
+    if (!content.trim()) throw new Error('Gemini devolvió una respuesta vacía mediante Puter.');
+    return content;
+  } catch (error) {
+    throw normalizePuterError(error);
   }
 };
 
-/**
- * Verifica si la API key está configurada
- */
-export const isGeminiConfigured = () => {
-  return !!(import.meta.env.VITE_GEMINI_API_KEY);
-};
+export const sendMessageToGemini = generateGeminiAgentResponse;

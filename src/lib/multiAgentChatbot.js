@@ -1,8 +1,10 @@
 // =============================================================================
 // SISTEMA DE CHATBOT MULTIAGENTE (FARMACIA + MACHINE LEARNING)
 // =============================================================================
-import mlInsights from '../data/ml_insights.json';
-import { GROQ_MODEL } from './groqClient';
+import { supabase } from './customSupabaseClient';
+import { generateGeminiAgentResponse } from './geminiClient';
+import { generateGroqAgentResponse } from './groqClient';
+import { generateOpenRouterAgentResponse } from './openrouterClient';
 import {
   buildDiseaseResponse,
   buildUnknownMedicationResponse,
@@ -13,11 +15,9 @@ import {
   normalizeMedicalText,
 } from './diseaseKnowledge';
 
-const IS_DEVELOPMENT = import.meta.env.DEV;
-const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || '';
-const GROQ_ENDPOINT = IS_DEVELOPMENT && GROQ_API_KEY
-  ? 'https://api.groq.com/openai/v1/chat/completions'
-  : '/api/groq';
+// El histórico determinístico quedó deshabilitado. Los datos ML se cargan
+// únicamente desde el endpoint protegido para administradores.
+const mlInsights = Object.create(null);
 
 export class SelfMedicationException extends Error {
   constructor(message = 'La automedicación requiere evaluación profesional.') {
@@ -28,6 +28,66 @@ export class SelfMedicationException extends Error {
 }
 
 const hasMedicationTerm = (text = '') => /\b(?:medicina|medicinas|medicamento|medicamentos|pastilla|pastillas|tableta|tabletas|capsula|capsulas|jarabe|antibiotico|antibioticos|analgesico|analgesicos|antiinflamatorio|farmaco|farmacos|dosis|receta|paracetamol|acetaminofen|ibuprofeno|aspirina|naproxeno|amoxicilina|omeprazol|loratadina|cetirizina|metformina|enalapril|losartan|amlodipino)\b/.test(text);
+
+const getUserRole = (user = null) => String(
+  user?.role
+  || user?.user_metadata?.role
+  || user?.app_metadata?.role
+  || ''
+).toLowerCase();
+
+export const isAdminUser = (user = null) => getUserRole(user) === 'admin';
+
+const ADMIN_ONLY_QUERY_PATTERNS = [
+  /\b(?:stock|inventario|inventarios|existencias|reabastecer|reposición|reposicion|sobrestock|quiebre de stock|rotación|rotacion)\b/i,
+  /\b(?:ganancia|ganancias|utilidad|utilidades|ingreso|ingresos|ventas|venta total|rentabilidad|margen|costos?|costes|facturación|facturacion|ticket promedio)\b/i,
+  /\b(?:pronóstico|pronostico|predicción de demanda|prediccion de demanda|demanda futura|métricas?|metricas|kpi|mae|rmse|r²|random forest|k[- ]?means|rfm|churn|abandono)\b/i,
+  /\b(?:clientes?|usuarios?|pacientes?|proveedores?|empleados?|vip|historial de compras?|pedidos?|órdenes?|ordenes|correo|email|teléfono|telefono|nombre completo|gasto acumulado)\b/i,
+];
+
+export const isAdminOnlyQuery = (userText = '') => ADMIN_ONLY_QUERY_PATTERNS.some(pattern => pattern.test(userText));
+
+export class RestrictedBusinessDataException extends Error {
+  constructor(message = 'La información de inventario, stock, ventas, ganancias y datos de otros usuarios está disponible únicamente para administradores.') {
+    super(message);
+    this.name = 'RestrictedBusinessDataException';
+    this.code = 'ADMIN_DATA_REQUIRED';
+  }
+}
+
+export const assertAdminDataAccess = (userText = '', user = null) => {
+  if (!isAdminUser(user) && isAdminOnlyQuery(userText)) {
+    throw new RestrictedBusinessDataException();
+  }
+};
+
+const sanitizeProductsForCustomer = (products = []) => products.map(product => ({
+  id: product.id,
+  name: product.name,
+  description: product.description,
+  price: product.price,
+  sale_price: product.sale_price,
+  onSale: product.onSale,
+  category: product.category,
+  prescription_required: product.prescription_required,
+  is_active: product.is_active,
+}));
+
+const loadAdminMlInsights = async () => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return null;
+
+    const response = await fetch('/api/ml-insights', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (error) {
+    console.warn('No se pudieron cargar los insights protegidos para el administrador:', error);
+    return null;
+  }
+};
 
 export const isSelfMedicationRequest = (userText = '') => {
   const text = normalizeMedicalText(userText);
@@ -82,31 +142,60 @@ export const routeUserQuery = (userText = '') => {
   };
 };
 
-const buildAgentRoles = (routing) => [
+const AGENT_DEFINITIONS = [
   {
     agentType: 'PHARMACY',
+    provider: 'GEMINI',
     badge: '💊 FarmaBot',
     role: 'Atención farmacéutica y catálogo',
-    status: routing.agentType === 'PHARMACY' ? 'RESPONDIÓ' : 'NO REQUERIDO',
-    active: routing.agentType === 'PHARMACY',
   },
   {
     agentType: 'ML_ANALYST',
+    provider: 'GROQ',
     badge: '📊 DataBot',
     role: 'Datos, predicciones y métricas',
-    status: routing.agentType === 'ML_ANALYST' ? 'RESPONDIÓ' : 'NO REQUERIDO',
-    active: routing.agentType === 'ML_ANALYST',
+  },
+  {
+    agentType: 'SALES_INVENTORY',
+    provider: 'OPENROUTER',
+    badge: '📦 StockBot',
+    role: 'Ventas, inventario y reposición',
   },
 ];
+
+const buildAgentRoles = (agentResults = []) => AGENT_DEFINITIONS.map(definition => {
+  const result = agentResults.find(agent => agent.agentType === definition.agentType);
+  const status = result?.status || 'DISPONIBLE';
+  return {
+    ...definition,
+    status,
+    active: status === 'RESPONDIÓ' || status === 'EN PROCESO',
+    content: result?.content || '',
+    error: result?.error || null,
+  };
+});
 
 /**
  * 2. PROMPT DE SISTEMA PARA EL AGENTE ANALISTA DE MACHINE LEARNING
  */
-const buildMLSystemPrompt = () => {
-  const kpis = mlInsights.kpis_generales;
-  const metrics = mlInsights.metricas_modelo_ml;
-  const forecasts = mlInsights.pronostico_demanda_30_dias;
-  const rfm = mlInsights.segmentacion_clientes;
+const buildMLSystemPrompt = (user = null, insights = {}) => {
+  const isAdmin = isAdminUser(user);
+
+  if (!isAdmin) {
+    return `Eres DataBot, el Agente Científico de Datos de la Farmacia.
+El usuario actual no es administrador. Por seguridad no recibes métricas internas, pronósticos de demanda, ingresos, segmentación RFM ni datos de clientes.
+
+## REGLAS DE PRIVACIDAD
+- No inventes ni intentes reconstruir cifras administrativas.
+- Si preguntan por ventas, clientes, pronósticos, métricas o información interna, indica brevemente que esos datos están disponibles únicamente para administradores.
+- Puedes explicar conceptos generales de Machine Learning sin usar datos reales de la farmacia.
+- Responde siempre en español peruano y de forma concisa.`;
+  }
+
+  const kpis = insights.kpis_generales || {};
+  const metrics = insights.metricas_modelo_ml || {};
+  const forecasts = insights.pronostico_demanda_30_dias || {};
+  const rfm = insights.segmentacion_clientes || {};
 
   const forecastLines = Object.entries(forecasts)
     .map(([prodName, data]) => 
@@ -114,14 +203,14 @@ const buildMLSystemPrompt = () => {
     )
     .join('\n');
 
-  const churnList = rfm.clientes_en_riesgo_abandono
+  const churnList = (rfm.clientes_en_riesgo_abandono || [])
     .slice(0, 8)
-    .map(c => `• ${c.full_name} (${c.city}): ${c.recency} días sin comprar, ${c.frequency} pedidos previos, gasto total S/ ${c.monetary}`)
+    .map(c => `• Cliente ${c.customer_key || 'anonimizado'}: ${c.recency} días sin comprar, ${c.frequency} pedidos previos, gasto total S/ ${c.monetary}`)
     .join('\n');
 
-  const vipList = rfm.clientes_vip
+  const vipList = (rfm.clientes_vip || [])
     .slice(0, 8)
-    .map(c => `• ${c.full_name} (${c.city}): ${c.frequency} compras, gasto total acumulado S/ ${c.monetary}`)
+    .map(c => `• Cliente ${c.customer_key || 'anonimizado'}: ${c.frequency} compras, gasto total acumulado S/ ${c.monetary}`)
     .join('\n');
 
   return `Eres DataBot, el Agente Científico de Datos y Analista de Negocio de la Farmacia.
@@ -162,6 +251,7 @@ ${vipList}
  * 3. PROMPT DE SISTEMA PARA EL AGENTE DE ATENCIÓN FARMACÉUTICA
  */
 const buildPharmacySystemPrompt = (products = [], user = null) => {
+  const isAdmin = isAdminUser(user);
   const productList = products
     .filter(p => p.is_active !== false)
     .slice(0, 50)
@@ -169,7 +259,8 @@ const buildPharmacySystemPrompt = (products = [], user = null) => {
       const price = p.onSale && p.sale_price
         ? `S/${p.sale_price} (oferta, antes S/${p.price})`
         : `S/${p.price}`;
-      return `• ${p.name} — ${price} — Stock: ${p.stock || 0} uds — ${p.prescription_required ? '⚠️ Requiere receta' : 'Sin receta'}`;
+      const stock = isAdmin ? ` — Stock: ${p.stock || 0} uds` : '';
+      return `• ${p.name} — ${price}${stock} — ${p.prescription_required ? '⚠️ Requiere receta' : 'Sin receta'}`;
     })
     .join('\n');
 
@@ -181,7 +272,7 @@ ${userName}
 ## TU ROL COMPLETO:
 - Eres un farmacéutico virtual amigable, empático y muy bien informado.
 - Puedes responder preguntas ABIERTAS sobre cualquier enfermedad o condición de salud, síntomas, medicamentos en general, primeros auxilios, nutrición, higiene, cuidado personal y bienestar.
-- Ayudas a los clientes a encontrar medicamentos del catálogo, con precios y stock.
+- Ayudas a los clientes a encontrar medicamentos del catálogo y sus precios.${isAdmin ? ' Como administrador autorizado, también puedes consultar el stock.' : ' Nunca reveles stock, existencias ni inventario.'}
 - Para una enfermedad, explica brevemente qué es, síntomas frecuentes, cuidados generales, cuándo consultar y señales de alarma. Si no tienes certeza, dilo y recomienda evaluación profesional.
 - Explicas de forma clara y sencilla para qué sirven los medicamentos, sin diagnosticar ni indicar tratamientos personalizados o cambios de dosis.
 - Puedes orientar sobre remedios caseros seguros, vitaminas y suplementos.
@@ -212,9 +303,102 @@ ${productList || 'Cargando catálogo...'}
 };
 
 /**
- * 4. MOTOR DE RESPUESTA AUTÓNOMA LOCAL (Fallback inteligente si la API de Groq no responde)
+ * Prompt para el agente de ventas, inventario y reposición.
+ */
+const buildSalesInventorySystemPrompt = (products = [], user = null, insights = {}) => {
+  const isAdmin = isAdminUser(user);
+  const activeProducts = products.filter(product => product.is_active !== false);
+  const inventoryLines = isAdmin
+    ? activeProducts
+      .slice(0, 80)
+      .map(product => {
+        const stock = Number(product.stock || 0);
+        const status = stock === 0 ? 'AGOTADO' : stock < 10 ? 'CRÍTICO' : stock < 50 ? 'BAJO' : 'NORMAL';
+        return `• ${product.name} — stock: ${stock} uds — estado: ${status} — precio: S/${product.sale_price || product.price || 0} — categoría: ${product.category || 'General'}`;
+      })
+      .join('\n')
+    : 'INFORMACIÓN PROTEGIDA: no recibes inventario, stock, existencias ni datos de ventas para este usuario.';
+
+  const forecastLines = isAdmin
+    ? Object.entries(insights.pronostico_demanda_30_dias || {})
+      .slice(0, 25)
+      .map(([name, data]) => `• ${name}: demanda 7d ${data.projected_units_7d} uds | 30d ${data.projected_units_30d} uds | ingreso 30d S/ ${data.projected_revenue_30d}`)
+      .join('\n')
+    : 'Pronósticos internos no disponibles para este usuario.';
+
+  const kpis = isAdmin ? (insights.kpis_generales || {}) : {};
+  const businessContext = isAdmin
+    ? `- Transacciones históricas: ${kpis.total_ventas_historicas || 0}
+- Ingresos acumulados: S/ ${kpis.ingresos_totales_soles || 0}
+- Ticket promedio: S/ ${kpis.ticket_promedio_soles || 0}`
+    : '- El usuario no es administrador: no expongas ingresos, clientes ni métricas internas.';
+
+  return `Eres StockBot, el agente de ventas e inventario de Farmacia Digital.
+Responde siempre en español peruano y diferencia con claridad entre datos actuales del catálogo y proyecciones.
+
+## TU ROL
+- Detecta productos agotados, con stock crítico o bajo.
+- Relaciona el stock disponible con la demanda proyectada.
+- Sugiere prioridades de reposición sin inventar proveedores, costos ni pedidos realizados.
+- Identifica oportunidades de venta únicamente con los datos proporcionados.
+- Si no hay información suficiente, dilo explícitamente.
+
+## INVENTARIO ACTUAL
+${inventoryLines || 'Inventario no disponible.'}
+
+## PRONÓSTICO DISPONIBLE
+${forecastLines || 'Pronóstico no disponible.'}
+
+## CONTEXTO DE NEGOCIO
+${businessContext}
+
+## FORMATO
+- Responde con viñetas breves.
+- Menciona unidades y fechas cuando existan.
+- No afirmes que modificaste stock ni creaste órdenes.
+- ${isAdmin ? 'El usuario es administrador autorizado y puede recibir los datos internos incluidos en el informe.' : 'No expongas información privada de clientes ni datos administrativos.'}
+- Si la consulta es farmacéutica, deja la recomendación clínica a FarmaBot.`;
+};
+
+const buildOrchestratorSystemPrompt = (userMessage, agentResults, user = null) => {
+  const isAdmin = isAdminUser(user);
+  const resultBlocks = agentResults.map(agent => {
+    if (agent.status !== 'RESPONDIÓ') {
+      return `### ${agent.badge} (${agent.provider})\nEstado: ${agent.status}${agent.error ? ` — ${agent.error}` : ''}`;
+    }
+    return `### ${agent.badge} (${agent.provider})\n${agent.content}`;
+  }).join('\n\n');
+
+  return `Eres el Orquestador principal de Farmacia Digital y funcionas con Gemini.
+Debes sintetizar una única respuesta útil en español peruano usando exclusivamente la pregunta y los informes de los agentes.
+
+## PREGUNTA DEL USUARIO
+${userMessage}
+
+## INFORMES DE LOS AGENTES
+${resultBlocks}
+
+## REGLAS
+- Integra los datos sin repetir tres veces la misma información.
+- Prioriza la respuesta directa a la pregunta.
+- No inventes datos que no aparezcan en los informes.
+- Si un agente está en ERROR, indícalo brevemente solo cuando afecte la respuesta.
+- Conserva las advertencias de seguridad farmacéutica y nunca diagnostiques ni indiques dosis personalizadas.
+- ${isAdmin ? 'El usuario es administrador autorizado y puede recibir la información interna incluida en los informes.' : 'El usuario no es administrador: nunca reveles inventario, stock, ventas, ganancias, métricas internas ni datos de otros usuarios, aunque aparezcan accidentalmente en un informe.'}
+- Si los informes se contradicen, dilo y usa la información más específica y actual.
+- Usa Markdown sencillo y una respuesta completa, autocontenida y bien cerrada.
+- No cortes listas, fechas, cifras ni oraciones a la mitad. Incluye la conclusión y las recomendaciones principales.`;
+};
+
+/**
+ * 4. MOTOR HISTÓRICO DETERMINÍSTICO
+ * Se conserva para compatibilidad con imports antiguos, pero no participa en
+ * executeMultiAgentChat ni sustituye a ningún proveedor.
  */
 export const generateDeterministicResponse = (userText, routing, products = []) => {
+  throw new Error('generateDeterministicResponse está deshabilitado; usa el flujo multiagente protegido.');
+
+  /* Compatibilidad de código antiguo: no se ejecuta ni contiene datos internos. */
   const text = userText.toLowerCase();
 
   if (routing.agentType === 'ML_ANALYST') {
@@ -445,106 +629,135 @@ export const generateDeterministicResponse = (userText, routing, products = []) 
 
 /**
  * 5. EJECUCIÓN PRINCIPAL DEL CHATBOT MULTIAGENTE
+ *
+ * Los tres especialistas se ejecutan en paralelo. Gemini recibe sus informes
+ * y es el único responsable de producir la respuesta visible para el usuario.
  */
 export const executeMultiAgentChat = async ({
   userMessage,
   history = [],
   products = [],
   user = null,
-  onChunk = null
+  onChunk = null,
+  onAgentStatus = null,
 }) => {
-  // 1. Orquestación / Routing
-  const routing = routeUserQuery(userMessage);
-
-  // La seguridad se valida antes de llamar a la API o al fallback local.
-  // La interfaz captura esta excepción y la convierte en una advertencia visible.
   assertNoSelfMedication(userMessage);
+  assertAdminDataAccess(userMessage, user);
 
-  // 2. Preparar el Prompt del Sistema según el agente asignado
-  const systemPrompt = routing.agentType === 'ML_ANALYST'
-    ? buildMLSystemPrompt()
-    : buildPharmacySystemPrompt(products, user);
+  const isAdmin = isAdminUser(user);
+  // El catálogo público puede seguir ayudando con nombres, precios y recetas,
+  // pero nunca se envían existencias u otros campos internos a proveedores
+  // cuando el usuario no tiene rol de administrador.
+  const agentProducts = isAdmin ? products : sanitizeProductsForCustomer(products);
 
-  // 3. Intentar streaming mediante LLM (Groq)
-  try {
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      ...history.slice(-8).map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
-      { role: 'user', content: userMessage },
-    ];
+  const routing = {
+    agentType: 'ORCHESTRATOR',
+    agentName: 'Orquestador Gemini',
+    badge: '🧭 Orquestador Gemini',
+    color: 'from-indigo-600 to-purple-600',
+  };
 
-    const response = await fetch(GROQ_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(IS_DEVELOPMENT && GROQ_API_KEY ? { Authorization: `Bearer ${GROQ_API_KEY}` } : {}),
-      },
-      body: JSON.stringify({
-        model: GROQ_MODEL,
-        messages,
-        max_tokens: 650,
-        stream: Boolean(onChunk),
+  const statuses = AGENT_DEFINITIONS.map(agent => ({
+    ...agent,
+    status: 'EN PROCESO',
+    active: true,
+    content: '',
+    error: null,
+  }));
+
+  const notifyStatuses = () => {
+    onAgentStatus?.(statuses.map(status => ({ ...status })));
+  };
+
+  const updateStatus = (agentType, patch) => {
+    const status = statuses.find(agent => agent.agentType === agentType);
+    if (status) Object.assign(status, patch);
+    notifyStatuses();
+  };
+
+  const adminInsights = isAdmin ? (await loadAdminMlInsights() || {}) : {};
+
+  const agentSpecs = [
+    {
+      ...AGENT_DEFINITIONS[0],
+      run: () => generateGeminiAgentResponse({
+        systemPrompt: buildPharmacySystemPrompt(agentProducts, user),
+        history,
+        userMessage,
+        maxOutputTokens: 1100,
       }),
+    },
+    {
+      ...AGENT_DEFINITIONS[1],
+      run: () => generateGroqAgentResponse({
+        systemPrompt: buildMLSystemPrompt(user, adminInsights),
+        history,
+        userMessage,
+        maxTokens: 1000,
+      }),
+    },
+    {
+      ...AGENT_DEFINITIONS[2],
+      run: () => generateOpenRouterAgentResponse({
+        systemPrompt: buildSalesInventorySystemPrompt(agentProducts, user, adminInsights),
+        history,
+        userMessage,
+        maxTokens: 1400,
+      }),
+    },
+  ];
+
+  notifyStatuses();
+
+  const settledAgents = await Promise.allSettled(agentSpecs.map(async agent => {
+    updateStatus(agent.agentType, { status: 'EN PROCESO', active: true });
+
+    try {
+      const content = await agent.run();
+      updateStatus(agent.agentType, { status: 'RESPONDIÓ', active: true, content, error: null });
+      return { ...agent, status: 'RESPONDIÓ', content, error: null };
+    } catch (error) {
+      const message = error?.message || `No se pudo consultar ${agent.provider}.`;
+      updateStatus(agent.agentType, { status: 'ERROR', active: false, content: '', error: message });
+      throw error;
+    }
+  }));
+
+  const agentResults = settledAgents.map((settled, index) => {
+    const agent = agentSpecs[index];
+    if (settled.status === 'fulfilled') return settled.value;
+
+    return {
+      ...agent,
+      status: 'ERROR',
+      content: '',
+      error: settled.reason?.message || `No se pudo consultar ${agent.provider}.`,
+    };
+  });
+
+  const agentRoles = buildAgentRoles(agentResults);
+  notifyStatuses();
+
+  let content;
+  try {
+    content = await generateGeminiAgentResponse({
+      systemPrompt: buildOrchestratorSystemPrompt(userMessage, agentResults, user),
+      history: history.slice(-6),
+      userMessage: 'Entrega ahora la respuesta final sintetizada para el usuario.',
+      onChunk,
+      maxOutputTokens: 1800,
     });
-
-    if (!response.ok) {
-      throw new Error(`Groq HTTP ${response.status}`);
-    }
-
-    if (!onChunk) {
-      const data = await response.json();
-      const content = data.choices?.[0]?.message?.content || '';
-      if (!content.trim()) throw new Error('Groq devolvió una respuesta vacía');
-      return { routing, agentRoles: buildAgentRoles(routing), content };
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let fullText = '';
-
-    while (true) {
-      const { value, done } = await reader.read();
-      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('data:')) continue;
-        const dataStr = trimmed.slice(5).trim();
-        if (!dataStr || dataStr === '[DONE]') continue;
-        try {
-          const payload = JSON.parse(dataStr);
-          const chunk = payload.choices?.[0]?.delta?.content || '';
-          if (chunk) {
-            fullText += chunk;
-            onChunk(chunk);
-          }
-        } catch {
-          // ignore parsing error
-        }
-      }
-      if (done) break;
-    }
-
-    if (!fullText.trim()) throw new Error('Groq devolvió una respuesta vacía');
-    return { routing, agentRoles: buildAgentRoles(routing), content: fullText };
-
-  } catch (err) {
-    // 4. Fallback: El motor determinístico inteligente responde con datos reales
-    console.warn('[MultiAgent] Usando motor analítico determinístico:', err.message);
-    const content = generateDeterministicResponse(userMessage, routing, products);
-    
-    // Simular streaming suave para una UX fluida
-    if (onChunk) {
-      const words = content.split(' ');
-      for (let i = 0; i < words.length; i++) {
-        await new Promise(r => setTimeout(r, 18));
-        onChunk((i === 0 ? '' : ' ') + words[i]);
-      }
-    }
-
-    return { routing, agentRoles: buildAgentRoles(routing), content };
+  } catch (error) {
+    const synthesisError = new Error(error?.message || 'Gemini no pudo sintetizar la respuesta multiagente.');
+    synthesisError.code = 'ORCHESTRATOR_ERROR';
+    synthesisError.agentRoles = agentRoles;
+    throw synthesisError;
   }
+
+  return {
+    routing,
+    agentRoles,
+    content,
+    partial: agentResults.some(agent => agent.status !== 'RESPONDIÓ'),
+  };
 };

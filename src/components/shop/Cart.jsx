@@ -3,20 +3,22 @@ import { motion } from 'framer-motion';
 import { X, Plus, Minus, ShoppingBag, CreditCard, Truck } from 'lucide-react';
 import { Button, toast } from '@/components/ui';
 
-const Cart = ({ cart, onClose, onRemoveItem, onUpdateQuantity, user, onOpenCheckout }) => {
+const Cart = ({ cart, onClose, onRemoveItem, onUpdateQuantity, user, profile, onOpenCheckout }) => {
   const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const membershipLevel = profile?.membershipLevel || profile?.membership_level || user?.membershipLevel;
+  const isCustomer = profile?.role === 'customer' || user?.role === 'customer';
 
   const subtotal = cart.reduce((total, item) => {
     let price = item.price;
     // Aplicar descuento si el usuario tiene membresía
-    if (user?.role === 'customer' && user.membershipLevel) {
-      const discount = user.membershipLevel === 'gold' ? 0.15 : 0.10;
+    if (isCustomer && membershipLevel) {
+      const discount = membershipLevel === 'gold' ? 0.15 : membershipLevel === 'silver' ? 0.10 : 0;
       price = price * (1 - discount);
     }
     return total + (price * item.quantity);
   }, 0);
 
-  const shipping = subtotal > 50 ? 0 : 8;
+  const shipping = subtotal >= 50 ? 0 : 8;
   const total = subtotal + shipping;
 
   const handleCheckout = () => {
@@ -96,8 +98,8 @@ const Cart = ({ cart, onClose, onRemoveItem, onUpdateQuantity, user, onOpenCheck
                 let displayPrice = item.price;
                 let discount = 0;
 
-                if (user?.role === 'customer' && user.membershipLevel) {
-                  discount = user.membershipLevel === 'gold' ? 0.15 : 0.10;
+                if (isCustomer && membershipLevel) {
+                  discount = membershipLevel === 'gold' ? 0.15 : membershipLevel === 'silver' ? 0.10 : 0;
                   displayPrice = item.price * (1 - discount);
                 }
 

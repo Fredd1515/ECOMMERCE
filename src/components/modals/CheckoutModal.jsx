@@ -5,7 +5,7 @@ import {
   MapPin, Phone, User, ShoppingBag, ArrowRight, ArrowLeft, Loader2, Sparkles 
 } from 'lucide-react';
 import { Button, toast } from '@/components/ui';
-import { createOrder, updateCustomerBehavior } from '@/lib/datawarehouseQueries';
+import { createOrder } from '@/lib/datawarehouseQueries';
 import {
   calculateDeliveryRoute,
   formatDistance,
@@ -19,6 +19,8 @@ const PHARMACY_ORIGIN_COORDINATES = {
   lat: Number(import.meta.env.VITE_PHARMACY_ORIGIN_LAT || -10.5),
   lng: Number(import.meta.env.VITE_PHARMACY_ORIGIN_LNG || -76.5667),
 };
+const YAPE_PLIN_NUMBER = '944908531';
+const YAPE_PLIN_NUMBER_DISPLAY = '944 908 531';
 
 const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) => {
   const [step, setStep] = useState(1); // 1: Datos de Entrega, 2: Pago, 3: Éxito
@@ -54,8 +56,9 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
   const subtotal = cart.reduce((total, item) => total + (item.price * item.quantity), 0);
   
   // Descuento según membresía o promociones
-  const discountPercent = profile?.role === 'customer' && profile?.membershipLevel === 'gold' ? 0.15 
-    : profile?.membershipLevel === 'silver' ? 0.10 : 0;
+  const membershipLevel = profile?.membershipLevel || profile?.membership_level;
+  const discountPercent = profile?.role === 'customer' && membershipLevel === 'gold' ? 0.15
+    : profile?.role === 'customer' && membershipLevel === 'silver' ? 0.10 : 0;
   const discountAmount = subtotal * discountPercent;
   
   const shippingCost = (subtotal - discountAmount) >= 50 ? 0 : 8.00;
@@ -140,6 +143,15 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
   };
 
   const handleSubmitOrder = async () => {
+    if (!cart.length) {
+      toast({
+        title: "Carrito vacío",
+        description: "Agrega al menos un producto antes de confirmar la compra.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (!shippingData.address || !shippingData.phone) {
       toast({
         title: "Datos incompletos",
@@ -160,16 +172,21 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
       return;
     }
 
-    if (paymentMethod === 'card' && (!cardData.cardNumber || !cardData.expiry || !cardData.cvv)) {
+    const normalizedCardNumber = cardData.cardNumber.replace(/\s/g, '');
+    if (paymentMethod === 'card' && (
+      !/^\d{16}$/.test(normalizedCardNumber)
+      || !/^(0[1-9]|1[0-2])\/\d{2}$/.test(cardData.expiry)
+      || !/^\d{3,4}$/.test(cardData.cvv)
+    )) {
       toast({
-        title: "Datos de tarjeta incompletos",
-        description: "Por favor completa todos los campos de tu tarjeta.",
+        title: "Datos de tarjeta no válidos",
+        description: "Ingresa 16 dígitos, vencimiento MM/AA válido y un CVV de 3 o 4 dígitos.",
         variant: "destructive"
       });
       return;
     }
 
-    if ((paymentMethod === 'yape' || paymentMethod === 'plin') && !yapeCode) {
+    if ((paymentMethod === 'yape' || paymentMethod === 'plin') && !yapeCode.trim()) {
       toast({
         title: "Código de operación requerido",
         description: "Por favor ingresa los dígitos de la confirmación de Yape/Plin.",
@@ -189,10 +206,10 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
         discount: parseFloat(discountAmount.toFixed(2)),
         shipping_cost: parseFloat(shippingCost.toFixed(2)),
         final_amount: parseFloat(finalTotal.toFixed(2)),
-        status: 'processing',
+        status: 'pending',
         payment_method: paymentMethod,
-        payment_status: paymentMethod === 'cash' ? 'pending' : 'completed',
-        notes: 'Delivery desde ' + PHARMACY_ORIGIN + '. Distancia estimada: ' + formatDistance(routeEstimate.distanceMeters) + '. Tiempo de traslado estimado: ' + formatDuration(routeEstimate.durationMillis) + '.',
+        payment_status: 'pending',
+        payment_reference: yapeCode.trim() || null,
         shipping_address: `${shippingData.address}, ${shippingData.city} ${shippingData.reference ? `(Ref: ${shippingData.reference})` : ''} - Tel: ${shippingData.phone}`,
         order_date: new Date().toISOString()
       };
@@ -209,14 +226,6 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
 
       if (error) throw error;
 
-      // Actualizar comportamiento del usuario
-      if (user?.id) {
-        updateCustomerBehavior(user.id, {
-          total_orders: 1,
-          total_spent: finalTotal
-        }).catch(e => console.log(e));
-      }
-
       setCompletedOrder(createdOrder);
       setStep(3); // Pantalla de éxito
       
@@ -225,14 +234,17 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
       }
 
       toast({
-        title: "¡Pedido completado con éxito!",
-        description: `Tu pedido #${createdOrder.order_code || createdOrder.id} ha sido registrado.`
+        title: "Pedido enviado a revisión",
+        description: `El pedido #${createdOrder.order_code || createdOrder.id} quedará pendiente hasta que el administrador valide el pago.`
       });
     } catch (err) {
       console.error('Error al procesar el pedido:', err);
+      const manualCheckoutNotInstalled = /confirmación manual no está instalada|create_order_pending/i.test(err.message || '');
       toast({
-        title: "Error al procesar el pago",
-        description: err.message || "Ocurrió un error inesperado al procesar tu compra.",
+        title: manualCheckoutNotInstalled ? "Configura la confirmación manual" : "No se pudo registrar el pedido",
+        description: manualCheckoutNotInstalled
+          ? "Ejecuta supabase/atomic_checkout.sql en Supabase → SQL Editor y vuelve a intentarlo."
+          : (err.message || "Ocurrió un error inesperado al procesar tu compra."),
         variant: "destructive"
       });
     } finally {
@@ -260,12 +272,12 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
           <div>
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-6 h-6 text-green-200" />
-              <h2 className="text-2xl font-bold">Pasarela de Pago Segura</h2>
+              <h2 className="text-2xl font-bold">Confirmación de Compra</h2>
             </div>
             <p className="text-green-100 text-xs mt-1">
               {step === 1 && 'Paso 1 de 2: Dirección y detalles de entrega'}
               {step === 2 && 'Paso 2 de 2: Método de pago'}
-              {step === 3 && '¡Compra confirmada!'}
+              {step === 3 && 'Pago pendiente de verificación'}
             </p>
           </div>
           {step !== 3 && (
@@ -588,23 +600,25 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
                 <div className="bg-purple-50/70 border border-purple-200 p-5 rounded-2xl space-y-4 text-center">
                   <div className="flex items-center justify-center gap-2 text-purple-900 font-bold text-sm">
                     <QrCode className="w-5 h-5 text-purple-700" />
-                    Escanea el código QR desde tu app Yape o Plin
+                    Paga desde tu app Yape o Plin usando este número
                   </div>
 
-                  {/* QR Simulado con datos reales */}
-                  <div className="bg-white p-3 rounded-2xl inline-block shadow-md border border-purple-100 mx-auto">
-                    <img
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=YAPE-FARMACIA-MONTO-S/${finalTotal.toFixed(2)}`}
-                      alt="Código QR Yape"
-                      className="w-36 h-36 mx-auto rounded-lg"
-                    />
+                  <div className="bg-white p-4 rounded-2xl inline-block shadow-md border border-purple-100 mx-auto">
+                    <Phone className="w-10 h-10 mx-auto text-purple-700" />
                     <div className="text-[11px] font-bold text-purple-900 mt-2">
-                      Total a Yapear: <span className="text-sm font-extrabold">S/{finalTotal.toFixed(2)}</span>
+                      Envía exactamente: <span className="text-sm font-extrabold">S/{finalTotal.toFixed(2)}</span>
                     </div>
+                    <a
+                      href={`tel:${YAPE_PLIN_NUMBER}`}
+                      className="block text-2xl font-black tracking-wider text-purple-800 mt-1 hover:text-purple-600"
+                    >
+                      {YAPE_PLIN_NUMBER_DISPLAY}
+                    </a>
+                    <div className="text-[10px] text-gray-500 mt-1">Número para Yape o Plin</div>
                   </div>
 
                   <div className="text-xs text-gray-600 bg-white p-3 rounded-xl border border-purple-100 max-w-sm mx-auto">
-                    <div><strong>Número Yape / Plin:</strong> 987 654 321</div>
+                    <div><strong>Número Yape / Plin:</strong> {YAPE_PLIN_NUMBER_DISPLAY}</div>
                     <div><strong>Titular:</strong> Farmacia Digital S.A.C.</div>
                   </div>
 
@@ -614,9 +628,9 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
                     </label>
                     <input
                       type="text"
-                      maxLength={10}
+                      maxLength={20}
                       value={yapeCode}
-                      onChange={(e) => setYapeCode(e.target.value)}
+                      onChange={(e) => setYapeCode(e.target.value.trimStart().slice(0, 20))}
                       placeholder="Ej. 849201"
                       className="w-full px-3.5 py-2 border border-purple-300 rounded-xl text-sm font-mono text-center font-bold focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 outline-none bg-white"
                     />
@@ -654,6 +668,9 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
                   <span>Total Final:</span>
                   <span className="text-green-600">S/{finalTotal.toFixed(2)}</span>
                 </div>
+                <p className="pt-2 text-[11px] leading-relaxed text-amber-700">
+                  El pedido quedará pendiente de validación. El stock se descontará únicamente cuando un administrador confirme el pago.
+                </p>
               </div>
 
               {/* Botones */}
@@ -680,7 +697,7 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
                   ) : (
                     <>
                       <ShieldCheck className="w-5 h-5" />
-                      <span>Pagar S/{finalTotal.toFixed(2)} Ahora</span>
+                      <span>Registrar pedido S/{finalTotal.toFixed(2)}</span>
                     </>
                   )}
                 </Button>
@@ -700,9 +717,9 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
               </div>
 
               <div>
-                <h3 className="text-2xl font-black text-gray-900">¡Gracias por tu compra!</h3>
+                <h3 className="text-2xl font-black text-gray-900">¡Pedido registrado!</h3>
                 <p className="text-sm text-gray-600 mt-1">
-                  Tu pedido ha sido confirmado y ya se encuentra en preparación.
+                  El administrador revisará tu pago antes de preparar el pedido y descontar el stock.
                 </p>
               </div>
 
@@ -719,8 +736,12 @@ const CheckoutModal = ({ onClose, cart = [], user, profile, onOrderSuccess }) =>
                   <span className="font-semibold text-gray-800 uppercase">{paymentMethod}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Monto Total Pagado:</span>
+                  <span className="text-gray-500">Monto del pedido:</span>
                   <span className="font-bold text-gray-900 text-sm">S/{finalTotal.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Estado:</span>
+                  <span className="font-semibold text-amber-600">⏳ Pendiente de validación</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Dirección de Entrega:</span>

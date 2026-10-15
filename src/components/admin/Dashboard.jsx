@@ -4,7 +4,7 @@ import { TrendingUp, Package, Users, DollarSign, RefreshCw, BarChart3, Sparkles,
 import { Button, toast, Pagination } from '@/components/ui';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { getDashboardMetrics, getSalesChartData, getTopProducts } from '@/lib/adminQueries';
-import mlInsights from '@/data/ml_insights.json';
+import { supabase } from '@/lib/customSupabaseClient';
 
 const Dashboard = () => {
   const [loading, setLoading] = useState(true);
@@ -24,6 +24,7 @@ const Dashboard = () => {
   });
   const [salesChartData, setSalesChartData] = useState([]);
   const [topProducts, setTopProducts] = useState([]);
+  const [mlInsights, setMlInsights] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
 
   // Lista de pronósticos por producto obtenidos del modelo de ML
@@ -45,7 +46,22 @@ const Dashboard = () => {
   const totalLeales = segResumen['Cliente Leal / Frecuente'] || 0;
   useEffect(() => {
     loadDashboardData();
+    loadMlInsights();
   }, []);
+
+  const loadMlInsights = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+
+      const response = await fetch('/api/ml-insights', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (response.ok) setMlInsights(await response.json());
+    } catch (error) {
+      console.error('Error loading protected ML insights:', error);
+    }
+  };
 
   const loadDashboardData = async () => {
     setLoading(true);
