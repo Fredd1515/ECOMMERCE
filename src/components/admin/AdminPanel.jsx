@@ -9,7 +9,7 @@ import CustomersManagement from './CustomersManagement';
 import SuppliersManagement from './SuppliersManagement';
 import EmployeesManagement from './EmployeesManagement';
 
-const AdminPanel = ({ onClose, onUpdateProduct, onUpdateOrder, onCreateProduct }) => {
+const AdminPanel = ({ onClose, onUpdateProduct, onUpdateOrder, onCreateProduct, onPaymentConfirmed }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
 
   const tabs = [
@@ -29,7 +29,12 @@ const AdminPanel = ({ onClose, onUpdateProduct, onUpdateOrder, onCreateProduct }
       case 'products':
         return <ProductsManagement onUpdateProduct={onUpdateProduct} onCreateProduct={onCreateProduct} />;
       case 'orders':
-        return <OrdersManagement onUpdateOrder={onUpdateOrder} />;
+        return (
+          <OrdersManagement
+            onUpdateOrder={onUpdateOrder}
+            onPaymentConfirmed={onPaymentConfirmed}
+          />
+        );
       case 'sales':
         return <SalesAnalytics />;
       case 'customers':

@@ -131,13 +131,14 @@ Completa los valores de acuerdo con la siguiente tabla.
 |---|---:|---|
 | <code>VITE_SUPABASE_URL</code> | Sí | URL del proyecto Supabase. |
 | <code>VITE_SUPABASE_ANON_KEY</code> | Sí | Clave pública anon/publishable de Supabase. |
-| <code>VITE_GROQ_API_KEY</code> | Solo desarrollo local | Permite que el chat local llame directamente a Groq. |
-| <code>GROQ_API_KEY</code> | Producción | Clave privada utilizada por la función <code>/api/groq</code> en Vercel. |
+| <code>VITE_GEMINI_MODEL</code> | Opcional | Modelo Gemini usado por Puter.js; por defecto <code>gemini-3.8-flash</code>. |
+| <code>GROQ_API_KEY</code> | Sí para IA | Clave privada utilizada por DataBot mediante <code>/api/groq</code>. |
+| <code>OPENROUTER_API_KEY</code> | Sí para IA | Clave privada utilizada por StockBot mediante <code>/api/openrouter</code>. |
+| <code>OPENROUTER_MODEL</code> | Opcional | Modelo de OpenRouter; por defecto <code>nvidia/nemotron-3.5-lightning:free</code>. |
 | <code>VITE_GOOGLE_MAPS_API_KEY</code> | Opcional | Carga Google Maps y rutas. |
 | <code>VITE_PHARMACY_ORIGIN</code> | Opcional | Dirección de origen de la farmacia. |
 | <code>VITE_PHARMACY_ORIGIN_LAT</code> | Opcional | Latitud de la farmacia. |
 | <code>VITE_PHARMACY_ORIGIN_LNG</code> | Opcional | Longitud de la farmacia. |
-| <code>VITE_GEMINI_API_KEY</code> | Opcional | Integración anterior de Gemini, si alguna funcionalidad la utiliza. |
 
 ### Supabase
 
@@ -152,13 +153,9 @@ Usa:
 
 No uses la clave <code>service_role</code> en el navegador, en <code>.env.local</code> con prefijo <code>VITE_</code> ni en Vercel como variable pública.
 
-### Groq en desarrollo local
+### Proveedores de IA en desarrollo local
 
-Para ejecutar <code>pnpm dev</code>, el cliente local utiliza:
-
-<code>VITE_GROQ_API_KEY</code>
-
-Esta clave se utiliza únicamente para facilitar el desarrollo local. No la publiques, no la subas al repositorio y no la configures en Vercel con el prefijo <code>VITE_</code>.
+Para ejecutar <code>pnpm dev</code>, Puter.js conecta FarmaBot y el orquestador con Gemini sin API key propia. Solo configura las claves privadas de <code>GROQ_API_KEY</code> y <code>OPENROUTER_API_KEY</code> para los otros dos agentes.
 
 ### Ejemplo de archivo local
 
@@ -167,7 +164,10 @@ El archivo debe conservar los nombres exactos. Sustituye únicamente los valores
 ~~~env
 VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
 VITE_SUPABASE_ANON_KEY=tu-clave-publica-de-supabase
-VITE_GROQ_API_KEY=tu-clave-de-groq-solo-para-desarrollo
+VITE_GEMINI_MODEL=gemini-3.8-flash
+GROQ_API_KEY=tu-clave-de-groq
+OPENROUTER_API_KEY=tu-clave-de-openrouter
+OPENROUTER_MODEL=nvidia/nemotron-3.5-lightning:free
 VITE_GOOGLE_MAPS_API_KEY=tu-clave-de-google-maps
 VITE_PHARMACY_ORIGIN=Dirección de la farmacia
 VITE_PHARMACY_ORIGIN_LAT=-10.500000
@@ -217,6 +217,22 @@ from information_schema.tables
 where table_schema = 'public'
 order by table_name;
 ~~~
+
+### 3. Checkout y confirmación manual de pago
+
+Ejecuta una sola vez el archivo <code>supabase/atomic_checkout.sql</code> en <code>Supabase → SQL Editor</code>. El checkout registra el pedido como pendiente junto con el número de operación. El administrador lo revisa desde <code>Panel de Administración → Pedidos</code> y utiliza <code>Confirmar pago</code> o <code>Rechazar</code>.
+
+El stock solo se descuenta cuando el administrador confirma el pago. Esa confirmación valida el stock con bloqueo y actualiza pedido, inventario y auditoría dentro de la misma transacción.
+
+Después de ejecutarlo, prueba una compra con un producto de stock conocido y confirma que:
+
+- el pedido y sus items se registran con estado pendiente;
+- el número de operación aparece en el detalle del pedido administrativo;
+- al confirmar, <code>products.stock</code> disminuye según la cantidad comprada;
+- al rechazar, el pedido se cancela y el stock no cambia;
+- si el stock ya no alcanza al confirmar, la operación falla sin confirmar el pedido.
+
+El número mostrado para Yape/Plin en el checkout es <code>944 908 531</code>. La aplicación solicita el número de operación, pero la validación real del pago debe hacerse manualmente hasta integrar una pasarela oficial de Yape o Plin.
 
 ### 3. Crear el perfil automáticamente al registrarse
 
@@ -327,43 +343,50 @@ pnpm preview
 
 El modo local sirve para desarrollar. Para que los usuarios entren desde cualquier dispositivo necesitas desplegar la aplicación en Vercel u otro proveedor de hosting.
 
-## Configuración de Groq y FarmaBot
+## Configuración de Puter.js, Groq y OpenRouter
 
 ### Desarrollo local
 
-En <code>.env.local</code> configura:
+Puter.js proporciona el acceso a Gemini para FarmaBot y el orquestador sin que la aplicación gestione una clave de Google. Opcionalmente puedes elegir el modelo con <code>VITE_GEMINI_MODEL</code>.
+
+En <code>.env.local</code> configura las claves privadas de Groq y OpenRouter:
 
 ~~~env
-VITE_GROQ_API_KEY=tu-clave-de-groq
+VITE_GEMINI_MODEL=gemini-3.8-flash
+GROQ_API_KEY=tu-clave-de-groq
+OPENROUTER_API_KEY=tu-clave-de-openrouter
+OPENROUTER_MODEL=nvidia/nemotron-3.5-lightning:free
 ~~~
 
-Reinicia Vite y abre el chat. En desarrollo, <code>src/lib/groqClient.js</code> llama directamente a la API de Groq.
+Reinicia Vite y abre el chat. En desarrollo, el navegador usa Puter.js para Gemini y los proxies locales <code>/api/groq</code> y <code>/api/openrouter</code> para los otros proveedores.
 
 ### Producción en Vercel
 
-En producción, la clave no debe enviarse al navegador. El flujo es:
+En producción, Groq y OpenRouter permanecen protegidos en el servidor. Puter.js gestiona el acceso de Gemini desde el cliente según su modelo de uso:
 
-1. El navegador llama a <code>/api/groq</code>.
-2. Vercel ejecuta <code>api/groq.js</code>.
-3. La función lee <code>GROQ_API_KEY</code> en el servidor.
-4. La función se comunica con Groq.
-5. La respuesta vuelve al navegador sin exponer la clave.
+1. FarmaBot y el orquestador llaman a <code>puter.ai.chat()</code> con Gemini.
+2. DataBot llama a <code>/api/groq</code> y StockBot a <code>/api/openrouter</code>.
+3. Vercel ejecuta los dos proxies serverless y lee sus claves privadas.
+4. Gemini sintetiza las respuestas de FarmaBot, DataBot y StockBot mediante Puter.js.
 
 Configura en Vercel:
 
 | Nombre | Tipo | Entorno |
 |---|---|---|
+| <code>VITE_GEMINI_MODEL</code> | Variable | Production |
 | <code>GROQ_API_KEY</code> | Secret | Production |
+| <code>OPENROUTER_API_KEY</code> | Secret | Production |
+| <code>OPENROUTER_MODEL</code> | Variable | Production |
 
-No configures <code>VITE_GROQ_API_KEY</code> en Vercel. Las variables con prefijo <code>VITE_</code> pueden terminar incluidas en el JavaScript del navegador.
+No configures claves privadas de Groq u OpenRouter con prefijo <code>VITE_</code>. <code>VITE_GEMINI_MODEL</code> no es una clave y puede estar disponible en el navegador.
 
 Después de guardar la variable:
 
-1. Verifica que el archivo <code>api/groq.js</code> esté en la raíz del repositorio.
+1. Verifica que los archivos <code>api/groq.js</code> y <code>api/openrouter.js</code> estén en la raíz del repositorio.
 2. Haz un nuevo despliegue en Vercel.
 3. Abre la URL pública.
-4. Envía un mensaje desde FarmaBot.
-5. En DevTools → Network comprueba que la solicitud vaya a <code>/api/groq</code> y que responda correctamente.
+4. Envía un mensaje desde el asistente multiagente.
+5. En DevTools → Network comprueba las solicitudes a los tres proxies.
 
 No abras ni publiques la clave en capturas de pantalla. Si una clave se muestra públicamente, revócala en Groq y crea otra.
 
@@ -418,11 +441,11 @@ Si no configuras estas variables, se utilizan los valores de demostración inclu
 6. Usa la configuración:
 
    - Framework: Vite.
-   - Build command: <code>pnpm run build</code>.
+   - Build command: <code>npm run build</code>.
    - Output directory: <code>dist</code>.
-   - Install command: <code>pnpm install --frozen-lockfile</code>.
+   - Install command: <code>npm ci</code>.
 
-Vercel suele detectar automáticamente Vite y <code>pnpm-lock.yaml</code>. Si no lo detecta, introduce los valores anteriores manualmente.
+La configuración <code>vercel.json</code> deja estos valores definidos explícitamente para que Vercel use el <code>package-lock.json</code> y reproduzca el build validado localmente.
 
 ### Variables en Vercel
 
@@ -435,14 +458,17 @@ Agrega para <code>Production</code>:
 ~~~text
 VITE_SUPABASE_URL
 VITE_SUPABASE_ANON_KEY
+VITE_GEMINI_MODEL
 GROQ_API_KEY
+OPENROUTER_API_KEY
+OPENROUTER_MODEL
 VITE_GOOGLE_MAPS_API_KEY
 VITE_PHARMACY_ORIGIN
 VITE_PHARMACY_ORIGIN_LAT
 VITE_PHARMACY_ORIGIN_LNG
 ~~~
 
-Las variables de Google Maps y la dirección son opcionales. <code>GROQ_API_KEY</code> debe ser privada. No agregues <code>VITE_GROQ_API_KEY</code> en Vercel.
+Las variables de Google Maps, el modelo Gemini y la dirección son opcionales. <code>GROQ_API_KEY</code> y <code>OPENROUTER_API_KEY</code> deben ser privadas y no deben tener prefijo <code>VITE_</code>.
 
 Para variables que también necesites en previews, selecciona además <code>Preview</code>. No es necesario copiar claves privadas a todos los entornos.
 
@@ -538,20 +564,20 @@ Si deseas recuperación de contraseña por correo, entonces sí necesitas config
 
 La confirmación de correo sigue activada o Supabase intentó enviar un correo sin un proveedor SMTP configurado. Desactiva <code>Confirm email</code> si deseas el registro inmediato.
 
-### FarmaBot muestra API Key requerida
+### El asistente muestra un error de API Key
 
 En local:
 
-- Configura <code>VITE_GROQ_API_KEY</code> en <code>.env.local</code>.
+- Configura <code>GROQ_API_KEY</code> y <code>OPENROUTER_API_KEY</code> en <code>.env.local</code>. Gemini se conecta mediante Puter.js y no requiere API key.
 - Reinicia Vite.
 
 En Vercel:
 
-- Configura <code>GROQ_API_KEY</code>, sin prefijo <code>VITE_</code>.
+- Configura las dos variables privadas de Groq y OpenRouter, sin prefijo <code>VITE_</code>.
 - Selecciona <code>Production</code>.
 - Confirma que <code>api/groq.js</code> esté publicado.
 - Ejecuta un nuevo deploy.
-- Elimina la variable antigua <code>VITE_GROQ_API_KEY</code> de Vercel.
+- Elimina cualquier clave privada antigua con prefijo <code>VITE_</code> de Vercel.
 
 ### Error 404 en /api/groq
 
@@ -648,8 +674,12 @@ Comprueba específicamente que no exista <code>.env.local</code> en lo que vas a
 | <code>src/lib/customSupabaseClient.js</code> | Cliente público de Supabase. |
 | <code>src/lib/datawarehouseQueries.js</code> | Consultas de productos, perfiles y pedidos. |
 | <code>src/lib/adminQueries.js</code> | Consultas del panel administrativo. |
-| <code>src/lib/groqClient.js</code> | Cliente de FarmaBot; usa Groq directo en desarrollo y proxy en producción. |
-| <code>api/groq.js</code> | Función serverless que protege la clave de Groq en producción. |
+| <code>src/lib/multiAgentChatbot.js</code> | Orquestación paralela de FarmaBot, DataBot, StockBot y síntesis Gemini. |
+| <code>src/lib/geminiClient.js</code> | Cliente de FarmaBot y del orquestador Gemini. |
+| <code>src/lib/groqClient.js</code> | Cliente de DataBot mediante el proxy de Groq. |
+| <code>src/lib/openrouterClient.js</code> | Cliente de StockBot mediante OpenRouter. |
+| <code>api/groq.js</code> | Proxy serverless de Groq. |
+| <code>api/openrouter.js</code> | Proxy serverless de OpenRouter. |
 | <code>src/lib/googleMapsClient.js</code> | Google Maps y alternativa de rutas con OpenStreetMap/OSRM. |
 | <code>supabase/migrations/</code> | Migraciones SQL ejecutables en Supabase. |
 | <code>bd.txt.txt</code> | Referencia histórica del esquema; debe revisarse antes de ejecutar. |

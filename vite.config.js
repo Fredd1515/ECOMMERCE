@@ -1,9 +1,26 @@
 import path from 'node:path';
 import react from '@vitejs/plugin-react';
 import { createLogger, defineConfig, loadEnv } from 'vite';
+import mlInsightsHandler from './api/ml-insights.js';
 
 const localEnv = loadEnv('development', process.cwd(), '');
 const localGroqApiKey = localEnv.GROQ_API_KEY || process.env.GROQ_API_KEY || '';
+const localOpenRouterApiKey = localEnv.OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || '';
+const localOpenRouterModel = localEnv.OPENROUTER_MODEL || process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3.5-lightning:free';
+
+const localMlInsightsProxy = {
+  name: 'local-ml-insights-proxy',
+  configureServer(server) {
+    server.middlewares.use('/api/ml-insights', async (req, res) => {
+      await mlInsightsHandler(req, res, {
+        supabaseUrl: localEnv.VITE_SUPABASE_URL || localEnv.NEXT_PUBLIC_SUPABASE_URL,
+        supabaseKey: localEnv.VITE_SUPABASE_ANON_KEY
+          || localEnv.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+          || localEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      });
+    });
+  },
+};
 
 const localGroqProxy = {
   name: 'local-groq-proxy',
@@ -64,6 +81,75 @@ const localGroqProxy = {
           res.setHeader('Content-Type', 'application/json');
         }
         res.end(JSON.stringify({ error: { message: 'No se pudo conectar con Groq.' } }));
+      }
+    });
+  },
+};
+
+const localOpenRouterProxy = {
+  name: 'local-openrouter-proxy',
+  configureServer(server) {
+    server.middlewares.use('/api/openrouter', async (req, res) => {
+      if (req.method !== 'POST') {
+        res.statusCode = 405;
+        res.setHeader('Allow', 'POST');
+        res.end(JSON.stringify({ error: { message: 'Method not allowed.' } }));
+        return;
+      }
+
+      if (!localOpenRouterApiKey) {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: { message: 'OPENROUTER_API_KEY no está configurada en .env.local.' } }));
+        return;
+      }
+
+      try {
+        const chunks = [];
+        for await (const chunk of req) chunks.push(chunk);
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+        const stream = Boolean(body.stream);
+        const tokenParams = body.max_completion_tokens
+          ? { max_completion_tokens: body.max_completion_tokens }
+          : { max_tokens: body.max_tokens || 1400 };
+        const upstream = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${localOpenRouterApiKey}`,
+            ...(localEnv.OPENROUTER_HTTP_REFERER ? { 'HTTP-Referer': localEnv.OPENROUTER_HTTP_REFERER } : {}),
+            ...(localEnv.OPENROUTER_APP_NAME ? { 'X-Title': localEnv.OPENROUTER_APP_NAME } : {}),
+          },
+          body: JSON.stringify({
+            model: localOpenRouterModel,
+            messages: body.messages || [],
+            stream,
+            ...tokenParams,
+            ...(body.reasoning_effort ? { reasoning_effort: body.reasoning_effort } : {}),
+          }),
+        });
+
+        res.statusCode = upstream.status;
+        res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json');
+        if (stream && upstream.body) {
+          res.setHeader('Cache-Control', 'no-cache, no-transform');
+          const reader = upstream.body.getReader();
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            res.write(Buffer.from(value));
+          }
+          res.end();
+          return;
+        }
+        res.end(await upstream.text());
+      } catch (error) {
+        console.error('Local OpenRouter proxy error:', error);
+        if (!res.headersSent) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+        }
+        res.end(JSON.stringify({ error: { message: 'No se pudo conectar con OpenRouter.' } }));
       }
     });
   },
@@ -270,6 +356,8 @@ export default defineConfig({
 	plugins: [
 		react(),
 		localGroqProxy,
+		localOpenRouterProxy,
+		localMlInsightsProxy,
 		addTransformIndexHtml
 	],
 	server: {

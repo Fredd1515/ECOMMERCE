@@ -429,10 +429,51 @@ export const updateOrderStatus = async (orderId, status) => {
 };
 
 /**
+ * Confirma manualmente el pago de un pedido desde el panel de administración.
+ * El stock se descuenta dentro de Supabase únicamente en esta operación.
+ */
+export const confirmOrderPayment = async (orderId) => {
+  try {
+    const { data, error } = await supabase.rpc('confirm_order_payment', {
+      p_order_id: orderId
+    });
+
+    if (error) throw error;
+    return { data: data?.order || data, error: null };
+  } catch (error) {
+    console.error('Error confirming order payment:', error);
+    return { data: null, error };
+  }
+};
+
+/**
+ * Rechaza el pago de un pedido pendiente. No modifica el stock porque todavía
+ * no se había descontado.
+ */
+export const rejectOrderPayment = async (orderId, reason = 'Pago no verificado por el administrador') => {
+  try {
+    const { data, error } = await supabase.rpc('reject_order_payment', {
+      p_order_id: orderId,
+      p_reason: reason
+    });
+
+    if (error) throw error;
+    return { data: data?.order || data, error: null };
+  } catch (error) {
+    console.error('Error rejecting order payment:', error);
+    return { data: null, error };
+  }
+};
+
+/**
  * Crea un nuevo pedido
  */
 export const createOrder = async (orderData, orderItems) => {
   try {
+    if (!Array.isArray(orderItems) || orderItems.length === 0) {
+      throw new Error('El carrito está vacío. No se puede crear un pedido.');
+    }
+
     const orderCode = orderData.order_code || `ORD-${Date.now().toString().slice(-6)}`;
     const finalOrderPayload = {
       ...orderData,
@@ -441,38 +482,46 @@ export const createOrder = async (orderData, orderItems) => {
       updated_at: new Date().toISOString()
     };
 
-    // 1. Crear el pedido principal
-    const { data: order, error: orderError } = await supabase
-      .from('orders')
-      .insert(finalOrderPayload)
-      .select()
-      .single();
-
-    if (orderError) throw orderError;
-
-    // 2. Crear los items del pedido
-    const itemsWithOrderId = orderItems.map(item => ({
-      order_id: order.id,
+    const normalizedItems = orderItems.map(item => ({
       product_id: item.product_id || item.id,
       product_name: item.product_name || item.name,
-      quantity: parseInt(item.quantity, 10) || 1,
+      quantity: parseInt(item.quantity, 10),
       unit_price: parseFloat(item.unit_price || item.price) || 0,
       total_price: parseFloat(item.total_price || (item.price * item.quantity)) || 0,
-      created_at: new Date().toISOString()
     }));
 
-    const { data: items, error: itemsError } = await supabase
-      .from('order_items')
-      .insert(itemsWithOrderId)
-      .select();
+    if (normalizedItems.some(item => (
+      !item.product_id || !Number.isInteger(item.quantity) || item.quantity < 1
+    ))) {
+      throw new Error('El carrito contiene un producto o cantidad no válida.');
+    }
 
-    if (itemsError) throw itemsError;
+    // Primero se registra el pedido como pendiente. El administrador validará
+    // el pago y confirmará el stock desde el panel administrativo.
+    const { data: transaction, error: transactionError } = await supabase.rpc(
+      'create_order_pending',
+      {
+        p_order: finalOrderPayload,
+        p_items: normalizedItems
+      }
+    );
 
-    // El trigger de Supabase descuenta el stock de forma atómica al insertar
-    // cada artículo, sin exponer permisos de actualización sobre products.
+    if (transactionError) {
+      if (transactionError.code === 'PGRST202' || /create_order_pending/i.test(transactionError.message || '')) {
+        transactionError.message = 'La confirmación manual no está instalada en Supabase. Ejecuta el archivo supabase/atomic_checkout.sql en el SQL Editor.';
+      }
+      throw transactionError;
+    }
+
+    const order = transaction?.order || transaction;
+    const items = transaction?.order_items || [];
+
+    if (!order?.id) {
+      throw new Error('Supabase no devolvió el pedido creado.');
+    }
 
     return {
-      data: { ...order, order_items: items || [] },
+      data: { ...order, order_items: items },
       error: null
     };
   } catch (error) {

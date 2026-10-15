@@ -6,7 +6,11 @@ import {
 } from 'lucide-react';
 import { Button, toast, Pagination } from '@/components/ui';
 import { getAllOrdersWithDetails, getOrderStats } from '@/lib/adminQueries';
-import { updateOrderStatus } from '@/lib/datawarehouseQueries';
+import {
+  confirmOrderPayment,
+  rejectOrderPayment,
+  updateOrderStatus
+} from '@/lib/datawarehouseQueries';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const STATUS_CONFIG = {
@@ -27,6 +31,12 @@ const getNextStatus = (status) => {
 };
 
 const PAYMENT_LABELS = { card: '💳 Tarjeta', yape: '📱 Yape/Plin', cash: '💵 Efectivo' };
+
+const isPaymentPending = (order) => (
+  !order.isWarehouse
+  && order.status !== 'cancelled'
+  && ['pending', 'processing'].includes(String(order.payment_status || '').toLowerCase())
+);
 
 const StatusBadge = ({ status }) => {
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.pending;
@@ -82,7 +92,7 @@ const formatDate = (d) => {
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
-const OrdersManagement = ({ onUpdateOrder }) => {
+const OrdersManagement = ({ onUpdateOrder, onPaymentConfirmed }) => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [savingId, setSavingId] = useState(null);        // which order is being saved
@@ -161,6 +171,56 @@ const OrdersManagement = ({ onUpdateOrder }) => {
       // Rollback optimistic update
       toast({ title: 'Error al guardar', description: err.message || 'No se pudo actualizar en la base de datos.', variant: 'destructive' });
       await loadOrders();
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const handleConfirmPayment = async (order) => {
+    if (!isPaymentPending(order)) return;
+    setSavingId(order.id);
+
+    try {
+      const { data, error } = await confirmOrderPayment(order.id);
+      if (error) throw error;
+
+      if (onPaymentConfirmed) onPaymentConfirmed(data);
+      await loadOrders();
+      toast({
+        title: '✅ Pago confirmado',
+        description: `El stock del pedido ${order.order_code || order.id} fue descontado correctamente.`
+      });
+    } catch (err) {
+      toast({
+        title: 'No se pudo confirmar el pago',
+        description: err.message || 'Verifica el pago y el stock disponible.',
+        variant: 'destructive'
+      });
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const handleRejectPayment = async (order) => {
+    if (!isPaymentPending(order)) return;
+    setSavingId(order.id);
+
+    try {
+      const { data, error } = await rejectOrderPayment(order.id);
+      if (error) throw error;
+
+      if (onPaymentConfirmed) onPaymentConfirmed(data);
+      await loadOrders();
+      toast({
+        title: 'Pago rechazado',
+        description: 'El pedido fue cancelado y no se modificó el stock.'
+      });
+    } catch (err) {
+      toast({
+        title: 'No se pudo rechazar el pago',
+        description: err.message || 'Intenta nuevamente.',
+        variant: 'destructive'
+      });
     } finally {
       setSavingId(null);
     }
@@ -312,7 +372,15 @@ const OrdersManagement = ({ onUpdateOrder }) => {
 
                       {/* Payment Method */}
                       <td className="px-4 py-3 hidden md:table-cell">
-                        <span className="text-xs text-gray-600">{PAYMENT_LABELS[order.payment_method] || order.payment_method || '—'}</span>
+                        <div className="space-y-1">
+                          <span className="text-xs text-gray-600">{PAYMENT_LABELS[order.payment_method] || order.payment_method || '—'}</span>
+                          {isPaymentPending(order) && (
+                            <span className="block text-[10px] font-bold text-amber-700">⏳ Validación pendiente</span>
+                          )}
+                          {['completed', 'paid', 'pagado'].includes(String(order.payment_status || '').toLowerCase()) && (
+                            <span className="block text-[10px] font-bold text-green-700">✅ Confirmado</span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Total */}
@@ -330,9 +398,9 @@ const OrdersManagement = ({ onUpdateOrder }) => {
                         <div className="relative inline-block">
                           <select
                             value={order.status}
-                            disabled={savingId === order.id || order.isWarehouse}
+                            disabled={savingId === order.id || order.isWarehouse || isPaymentPending(order)}
                             onChange={e => handleStatusChange(order.id, e.target.value)}
-                            title={order.isWarehouse ? 'Registro histórico de fact_sales (solo lectura)' : 'Actualizar estado'}
+                            title={order.isWarehouse ? 'Registro histórico de fact_sales (solo lectura)' : isPaymentPending(order) ? 'Confirma el pago antes de avanzar el pedido' : 'Actualizar estado'}
                             className={`text-xs border-2 rounded-lg px-2 py-1.5 pr-6 outline-none cursor-pointer font-semibold transition-all ${
                               STATUS_CONFIG[order.status]?.color || 'border-gray-200 text-gray-700'
                             } focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed`}
@@ -348,12 +416,34 @@ const OrdersManagement = ({ onUpdateOrder }) => {
                         {getNextStatus(order.status) && (
                           <button
                             type="button"
-                            disabled={savingId === order.id || order.isWarehouse}
+                            disabled={savingId === order.id || order.isWarehouse || isPaymentPending(order)}
                             onClick={() => handleStatusChange(order.id, getNextStatus(order.status))}
                             className="block mx-auto mt-1 text-[10px] font-semibold text-blue-700 hover:text-blue-900 disabled:opacity-50"
                           >
                             Avanzar a {STATUS_CONFIG[getNextStatus(order.status)].label}
                           </button>
+                        )}
+                        {isPaymentPending(order) && (
+                          <div className="flex flex-col gap-1 mt-2 min-w-[130px]">
+                            <button
+                              type="button"
+                              disabled={savingId === order.id}
+                              onClick={() => handleConfirmPayment(order)}
+                              className="inline-flex items-center justify-center gap-1 rounded-lg bg-green-600 px-2 py-1.5 text-[10px] font-bold text-white hover:bg-green-700 disabled:opacity-50"
+                            >
+                              <CheckCircle className="w-3 h-3" />
+                              Confirmar pago
+                            </button>
+                            <button
+                              type="button"
+                              disabled={savingId === order.id}
+                              onClick={() => handleRejectPayment(order)}
+                              className="inline-flex items-center justify-center gap-1 rounded-lg border border-red-200 bg-white px-2 py-1.5 text-[10px] font-bold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                            >
+                              <XCircle className="w-3 h-3" />
+                              Rechazar
+                            </button>
+                          </div>
                         )}
                       </td>
 
@@ -430,6 +520,17 @@ const OrdersManagement = ({ onUpdateOrder }) => {
                                       {['completed', 'paid', 'pagado'].includes(String(order.payment_status).toLowerCase()) ? '✅ Pagado' : '⏳ Pendiente'}
                                     </span>
                                   </div>
+                                  {order.payment_reference && (
+                                    <div className="flex justify-between gap-3">
+                                      <span className="text-gray-500">N.º de operación:</span>
+                                      <span className="text-gray-800 font-mono font-semibold">{order.payment_reference}</span>
+                                    </div>
+                                  )}
+                                  {order.payment_rejection_reason && (
+                                    <div className="text-red-600 pt-1">
+                                      Motivo de rechazo: {order.payment_rejection_reason}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </div>

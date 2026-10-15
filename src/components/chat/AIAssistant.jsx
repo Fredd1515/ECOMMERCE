@@ -4,17 +4,39 @@ import {
   X, Send, Bot, User, Loader2, Sparkles, Pill, AlertTriangle,
   ChevronDown, RefreshCw, BarChart3, Activity
 } from 'lucide-react';
-import { executeMultiAgentChat } from '@/lib/multiAgentChatbot';
+import { executeMultiAgentChat, isAdminUser } from '@/lib/multiAgentChatbot';
 
 // ── Quick suggestion chips (Multiagente: Farmacia + Machine Learning) ────────
 const QUICK_SUGGESTIONS = [
-  { label: '📈 Predicción 30 días', text: '¿Cuál es la predicción de ventas y demanda para los próximos 30 días?' },
-  { label: '⚠️ Clientes en riesgo', text: '¿Qué clientes están en riesgo de abandono (churn) según el modelo de ML?' },
-  { label: '🏆 Clientes VIP', text: '¿Quiénes son nuestros mejores clientes VIP y cuánto han gastado?' },
-  { label: '🤖 Métricas de ML', text: '¿Cuáles son las métricas de precisión y detalles del modelo de Machine Learning?' },
+  { label: '📈 Predicción 30 días', text: '¿Cuál es la predicción de ventas y demanda para los próximos 30 días?', adminOnly: true },
+  { label: '⚠️ Clientes en riesgo', text: '¿Qué clientes están en riesgo de abandono (churn) según el modelo de ML?', adminOnly: true },
+  { label: '🏆 Clientes VIP', text: '¿Quiénes son nuestros mejores clientes VIP y cuánto han gastado?', adminOnly: true },
+  { label: '🤖 Métricas de ML', text: '¿Cuáles son las métricas de precisión y detalles del modelo de Machine Learning?', adminOnly: true },
+  { label: '📦 Stock crítico', text: '¿Qué productos tienen stock bajo o necesitan reposición?', adminOnly: true },
   { label: '💊 Dolor de cabeza', text: 'Tengo dolor de cabeza, ¿qué medicamento me recomiendas?' },
   { label: '💰 Productos en oferta', text: '¿Qué productos tienen en oferta hoy?' },
 ];
+
+const getAgentRoleLabel = (agentType, admin) => {
+  if (admin) {
+    return {
+      PHARMACY: 'Atención farmacéutica y catálogo',
+      ML_ANALYST: 'Datos, predicciones y métricas',
+      SALES_INVENTORY: 'Ventas, inventario y reposición',
+    }[agentType];
+  }
+
+  return {
+    PHARMACY: 'Atención farmacéutica y catálogo',
+    ML_ANALYST: 'Conceptos generales de datos',
+    SALES_INVENTORY: 'Catálogo y productos públicos',
+  }[agentType];
+};
+
+const getVisibleAgentRoles = (roles, admin) => roles.map(agent => ({
+  ...agent,
+  role: getAgentRoleLabel(agent.agentType, admin) || agent.role,
+}));
 
 // Renderizador Markdown pequeño y seguro para el chat. Usa nodos React en
 // lugar de HTML crudo, por lo que una respuesta del modelo no puede inyectar
@@ -175,9 +197,11 @@ const MarkdownContent = ({ content, isUser = false }) => {
 
 // ── Message bubble ──────────────────────────────────────────────────────────
 const MessageBubble = ({ msg }) => {
+  const [showAgentDetails, setShowAgentDetails] = useState(false);
   const isUser = msg.role === 'user';
   const isError = msg.role === 'error';
   const isML = msg.agentType === 'ML_ANALYST';
+  const isStock = msg.agentType === 'SALES_INVENTORY';
   const isOrchestrator = msg.agentType === 'ORCHESTRATOR';
 
   if (isError) {
@@ -205,6 +229,8 @@ const MessageBubble = ({ msg }) => {
               ? 'bg-gradient-to-br from-indigo-600 via-purple-600 to-teal-600 shadow-indigo-500/20'
               : isML
               ? 'bg-gradient-to-br from-purple-600 via-indigo-600 to-blue-600 shadow-purple-500/20'
+              : isStock
+              ? 'bg-gradient-to-br from-amber-500 to-orange-600 shadow-amber-500/20'
               : 'bg-gradient-to-br from-emerald-500 to-teal-600 shadow-emerald-500/20'
           }`}
           title={msg.agentName || 'Asistente'}
@@ -223,6 +249,8 @@ const MessageBubble = ({ msg }) => {
                   ? 'bg-indigo-100 text-indigo-800 border border-indigo-200'
                   : isML
                   ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                  : isStock
+                  ? 'bg-amber-100 text-amber-800 border border-amber-200'
                   : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
               }`}
             >
@@ -251,29 +279,62 @@ const MessageBubble = ({ msg }) => {
           )}
         </div>
 
-        {!isUser && msg.agentRoles?.length > 0 && !msg.streaming && (
+        {!isUser && msg.agentRoles?.length > 0 && (
           <div className="mt-2 rounded-xl border border-indigo-100 bg-indigo-50/70 px-2.5 py-2">
             <div className="mb-1.5 text-[9px] font-bold uppercase tracking-wide text-indigo-500">
               Roles del sistema multiagente
             </div>
             <div className="space-y-1">
               {msg.agentRoles.map((agent) => (
-                <div
-                  key={agent.agentType}
-                  className={`flex items-center gap-1.5 rounded-lg border px-2 py-1.5 ${
-                    agent.active
-                      ? 'border-indigo-200 bg-white text-indigo-900'
-                      : 'border-transparent bg-white/60 text-gray-400'
-                  }`}
-                >
-                  <span className="text-[10px] font-semibold">{agent.badge}</span>
-                  <span className="min-w-0 flex-1 truncate text-[9px]">{agent.role}</span>
-                  <span className={`shrink-0 text-[8px] font-bold tracking-wide ${agent.active ? 'text-emerald-600' : 'text-gray-400'}`}>
-                    {agent.status}
-                  </span>
+                <div key={agent.agentType}>
+                  <div
+                    className={`flex items-center gap-1.5 rounded-lg border px-2 py-1.5 ${
+                      agent.status === 'ERROR'
+                        ? 'border-red-200 bg-red-50 text-red-800'
+                        : agent.active
+                        ? 'border-indigo-200 bg-white text-indigo-900'
+                        : 'border-transparent bg-white/60 text-gray-400'
+                    }`}
+                  >
+                    <span className="text-[10px] font-semibold">{agent.badge}</span>
+                    <span className="min-w-0 flex-1 truncate text-[9px]">{agent.role}</span>
+                    <span className="shrink-0 text-[8px] font-medium text-gray-500">{agent.provider}</span>
+                    <span className={`shrink-0 text-[8px] font-bold tracking-wide ${agent.status === 'ERROR' ? 'text-red-600' : agent.active ? 'text-emerald-600' : 'text-gray-400'}`}>
+                      {agent.status}
+                    </span>
+                  </div>
+                  {agent.status === 'ERROR' && agent.error && (
+                    <div className="px-2 pt-1 text-[9px] leading-snug text-red-700">
+                      {agent.error}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
+            {!msg.streaming && (
+              <button
+                type="button"
+                onClick={() => setShowAgentDetails(value => !value)}
+                className="mt-2 text-[9px] font-semibold text-indigo-700 hover:text-indigo-900"
+              >
+                {showAgentDetails ? 'Ocultar análisis' : 'Ver análisis de cada agente'}
+              </button>
+            )}
+            {showAgentDetails && !msg.streaming && (
+              <div className="mt-2 space-y-2 border-t border-indigo-100 pt-2">
+                {msg.agentRoles.map(agent => (
+                  <div key={`${agent.agentType}-detail`} className="rounded-lg bg-white/80 p-2 text-[10px] text-gray-700">
+                    <div className="mb-1 font-semibold text-gray-900">{agent.badge} · {agent.provider}</div>
+                    {agent.content ? <MarkdownContent content={agent.content} /> : <span className="text-red-600">{agent.error || 'Sin respuesta disponible.'}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {msg.partial && !msg.streaming && (
+              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] text-amber-800">
+                Respuesta parcial: uno o más agentes no estuvieron disponibles.
+              </div>
+            )}
           </div>
         )}
         <div className={`text-[10px] text-gray-400 mt-0.5 ${isUser ? 'text-right' : 'text-left'} px-1`}>
@@ -293,6 +354,9 @@ const MessageBubble = ({ msg }) => {
 
 // ── Main Component ──────────────────────────────────────────────────────────
 const AIAssistant = ({ products = [], user = null, profile = null }) => {
+  const admin = isAdminUser(profile || user);
+  const visibleSuggestions = QUICK_SUGGESTIONS.filter(suggestion => admin || !suggestion.adminOnly);
+  const audienceKey = `${user?.id || 'anonymous'}:${admin ? 'admin' : 'customer'}`;
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -301,27 +365,42 @@ const AIAssistant = ({ products = [], user = null, profile = null }) => {
   const [hasUnread, setHasUnread] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const audienceKeyRef = useRef(audienceKey);
 
   const now = () => new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+
+  // Nunca conservar una conversación administrativa al cambiar de usuario o
+  // pasar de administrador a cliente en la misma pestaña.
+  useEffect(() => {
+    audienceKeyRef.current = audienceKey;
+    setMessages([]);
+    setInput('');
+    setShowSuggestions(true);
+  }, [audienceKey]);
 
   // Welcome message on first open
   useEffect(() => {
     if (isOpen && messages.length === 0) {
       const name = profile?.first_name || user?.email?.split('@')[0] || 'amigo';
+      const welcomeRoles = [
+        { agentType: 'PHARMACY', provider: 'GEMINI', badge: '💊 FarmaBot', role: getAgentRoleLabel('PHARMACY', admin), status: 'DISPONIBLE', active: false },
+        { agentType: 'ML_ANALYST', provider: 'GROQ', badge: '📊 DataBot', role: getAgentRoleLabel('ML_ANALYST', admin), status: 'DISPONIBLE', active: false },
+        { agentType: 'SALES_INVENTORY', provider: 'OPENROUTER', badge: '📦 StockBot', role: getAgentRoleLabel('SALES_INVENTORY', admin), status: 'DISPONIBLE', active: false },
+      ];
+      const welcomeContent = admin
+        ? `¡Hola ${name}! 👋 Soy tu **Asistente Virtual Multiagente** con tres agentes activos y un orquestador Gemini:\n\n• 💊 **FarmaBot (Gemini):** Resuelve dudas sobre medicamentos, precios, síntomas y compras.\n• 📊 **DataBot (Groq):** Responde preguntas sobre predicciones, métricas y clientes en riesgo.\n• 📦 **StockBot (OpenRouter):** Analiza ventas, inventario y reposición.\n\n¿En qué te puedo ayudar hoy?`
+        : `¡Hola ${name}! 👋 Soy tu **Asistente Virtual Multiagente**.\n\n• 💊 **FarmaBot (Gemini):** Medicamentos, precios, ofertas y orientación general de salud.\n• 📊 **DataBot (Groq):** Conceptos generales de datos y Machine Learning.\n• 📦 **StockBot (OpenRouter):** Información pública del catálogo.\n\nLos datos internos de inventario, stock, ventas, ganancias y otros usuarios están protegidos y solo están disponibles para administradores.\n\n¿En qué te puedo ayudar hoy?`;
       setMessages([{
         id: Date.now(),
         role: 'assistant',
         badge: '🧭 Orquestador',
         agentType: 'ORCHESTRATOR',
-        agentRoles: [
-          { agentType: 'PHARMACY', badge: '💊 FarmaBot', role: 'Atención farmacéutica y catálogo', status: 'DISPONIBLE', active: false },
-          { agentType: 'ML_ANALYST', badge: '📊 DataBot', role: 'Datos, predicciones y métricas', status: 'DISPONIBLE', active: false },
-        ],
-        content: `¡Hola ${name}! 👋 Soy tu **Asistente Virtual Multiagente** con dos agentes activos:\n\n• 💊 **FarmaBot:** Resuelve dudas sobre medicamentos, precios, síntomas y compras en la farmacia.\n• 📊 **DataBot (ML):** Responde preguntas sobre predicciones de demanda a 30 días, métricas del modelo y clientes en riesgo de abandono.\n\n¿En qué te puedo ayudar hoy?`,
+        agentRoles: welcomeRoles,
+        content: welcomeContent,
         time: now()
       }]);
     }
-  }, [isOpen]);
+  }, [isOpen, admin, profile?.first_name, user?.email]);
 
   // Scroll to bottom on new message
   useEffect(() => {
@@ -340,6 +419,7 @@ const AIAssistant = ({ products = [], user = null, profile = null }) => {
   const sendMessage = useCallback(async (text) => {
     const userText = (text || input).trim();
     if (!userText || isThinking) return;
+    const requestAudienceKey = audienceKey;
 
     const userMsg = { id: Date.now(), role: 'user', content: userText, time: now() };
     setMessages(prev => [...prev, userMsg]);
@@ -355,8 +435,13 @@ const AIAssistant = ({ products = [], user = null, profile = null }) => {
       content: '',
       streaming: true,
       time: now(),
-      badge: 'Pensando...',
-      agentType: 'ORCHESTRATOR'
+      badge: '🧭 Orquestador Gemini',
+      agentType: 'ORCHESTRATOR',
+      agentRoles: [
+        { agentType: 'PHARMACY', provider: 'GEMINI', badge: '💊 FarmaBot', role: getAgentRoleLabel('PHARMACY', admin), status: 'EN PROCESO', active: true },
+        { agentType: 'ML_ANALYST', provider: 'GROQ', badge: '📊 DataBot', role: getAgentRoleLabel('ML_ANALYST', admin), status: 'EN PROCESO', active: true },
+        { agentType: 'SALES_INVENTORY', provider: 'OPENROUTER', badge: '📦 StockBot', role: getAgentRoleLabel('SALES_INVENTORY', admin), status: 'EN PROCESO', active: true },
+      ]
     };
     setMessages(prev => [...prev, botMsg]);
 
@@ -378,6 +463,11 @@ const AIAssistant = ({ products = [], user = null, profile = null }) => {
           setMessages(prev =>
             prev.map(m => m.id === botId ? { ...m, content: accumulated } : m)
           );
+        },
+        onAgentStatus: (agentRoles) => {
+          setMessages(prev =>
+            prev.map(m => m.id === botId ? { ...m, agentRoles: getVisibleAgentRoles(agentRoles, admin) } : m)
+          );
         }
       });
 
@@ -389,7 +479,8 @@ const AIAssistant = ({ products = [], user = null, profile = null }) => {
           badge: '🧭 Orquestador',
           agentName: 'Orquestador Multiagente',
           agentType: 'ORCHESTRATOR',
-          agentRoles: result.agentRoles,
+          agentRoles: getVisibleAgentRoles(result.agentRoles, admin),
+          partial: result.partial,
           streaming: false
         } : m)
       );
@@ -397,19 +488,21 @@ const AIAssistant = ({ products = [], user = null, profile = null }) => {
       if (!isOpen) setHasUnread(true);
 
     } catch (err) {
+      if (audienceKeyRef.current !== requestAudienceKey) return;
       const isSelfMedication = err?.code === 'SELF_MEDICATION_DETECTED';
+      const isRestricted = err?.code === 'ADMIN_DATA_REQUIRED';
       setMessages(prev => [...prev.filter(m => m.id !== botId), {
         id: Date.now(),
-        role: isSelfMedication ? 'assistant' : 'error',
-        badge: isSelfMedication ? '⚠️ Seguridad farmacéutica' : undefined,
-        agentType: 'PHARMACY',
+        role: isSelfMedication || isRestricted ? 'assistant' : 'error',
+        badge: isRestricted ? '🔒 Acceso restringido' : isSelfMedication ? '⚠️ Seguridad farmacéutica' : undefined,
+        agentType: isRestricted ? 'ORCHESTRATOR' : 'PHARMACY',
         content: err.message || 'Error al conectar con el asistente.',
         time: now()
       }]);
     } finally {
       setIsThinking(false);
     }
-  }, [input, isThinking, messages, products, profile, user, isOpen]);
+  }, [input, isThinking, messages, products, profile, user, isOpen, admin, audienceKey]);
 
   const clearChat = () => {
     setMessages([]);
@@ -467,13 +560,13 @@ const AIAssistant = ({ products = [], user = null, profile = null }) => {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-white font-bold text-sm flex items-center gap-1.5">
-                  FarmaBot + DataBot
+                  Multiagente Gemini + Groq + OpenRouter
                   <span className="text-[10px] bg-white/25 px-2 py-0.5 rounded-full font-semibold">MULTIAGENTE</span>
                 </div>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
                   <span className="text-emerald-100 text-[11px] truncate">
-                    2 Agentes: Farmacia + Machine Learning
+                    3 agentes en paralelo · Orquestador Gemini
                   </span>
                 </div>
               </div>
@@ -497,11 +590,15 @@ const AIAssistant = ({ products = [], user = null, profile = null }) => {
             {/* Sub-banner informativo de agentes */}
             <div className="bg-gradient-to-r from-emerald-50 to-indigo-50 border-b border-gray-200/60 px-4 py-1.5 flex items-center justify-between text-[11px] text-gray-600">
               <span className="flex items-center gap-1 font-medium text-emerald-800">
-                <Pill className="w-3 h-3 text-emerald-600" /> FarmaBot (Catálogo)
+                <Pill className="w-3 h-3 text-emerald-600" /> FarmaBot · Gemini
               </span>
               <span className="text-gray-300">|</span>
               <span className="flex items-center gap-1 font-medium text-indigo-800">
-                <Activity className="w-3 h-3 text-indigo-600" /> DataBot (Predicciones ML)
+                <Activity className="w-3 h-3 text-indigo-600" /> DataBot · Groq
+              </span>
+              <span className="text-gray-300">|</span>
+              <span className="flex items-center gap-1 font-medium text-amber-800">
+                <BarChart3 className="w-3 h-3 text-amber-600" /> StockBot · OpenRouter
               </span>
             </div>
 
@@ -516,7 +613,7 @@ const AIAssistant = ({ products = [], user = null, profile = null }) => {
                     Preguntas sugeridas
                   </p>
                   <div className="grid grid-cols-2 gap-1.5">
-                    {QUICK_SUGGESTIONS.map((s, i) => (
+                    {visibleSuggestions.map((s, i) => (
                       <motion.button
                         key={i}
                         initial={{ opacity: 0, y: 6 }}
@@ -544,7 +641,7 @@ const AIAssistant = ({ products = [], user = null, profile = null }) => {
               </div>
               <div className="flex items-center gap-1 text-[10px] text-indigo-600 font-medium">
                 <BarChart3 className="w-3 h-3" />
-                <span>ML Pipeline Activo (500 ventas)</span>
+                <span>{admin ? 'ML + inventario autorizados' : 'Protección de datos activa'}</span>
               </div>
             </div>
 
@@ -557,7 +654,7 @@ const AIAssistant = ({ products = [], user = null, profile = null }) => {
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
                   disabled={isThinking}
-                  placeholder="Pregunta sobre medicamentos o pronósticos de ML..."
+                  placeholder={admin ? 'Pregunta sobre medicamentos, inventario o métricas...' : 'Pregunta sobre medicamentos, precios u ofertas...'}
                   rows={1}
                   className="flex-1 bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none resize-none max-h-28 leading-5 disabled:opacity-60"
                   style={{ minHeight: '20px' }}
@@ -579,7 +676,7 @@ const AIAssistant = ({ products = [], user = null, profile = null }) => {
                 </button>
               </div>
               <p className="text-[10px] text-gray-400 text-center mt-1.5">
-                Markdown compatible · Orquestador enruta a FarmaBot o DataBot.
+                Markdown compatible · Tres agentes analizan en paralelo y Gemini sintetiza.
               </p>
             </div>
           </motion.div>

@@ -291,8 +291,20 @@ function App() {
 
   const addToCart = async (product, quantity = 1) => {
     const existingItem = cart.find(item => item.id === product.id);
+    const requestedQuantity = (existingItem?.quantity || 0) + quantity;
+    const availableStock = Number(product?.stock);
+
+    if (Number.isFinite(availableStock) && requestedQuantity > availableStock) {
+      toast({
+        title: "Stock insuficiente",
+        description: `Solo quedan ${availableStock} unidades de ${product.name}.`,
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (existingItem) {
-      setCart(cart.map(item => item.id === product.id ? { ...item, quantity: item.quantity + quantity } : item));
+      setCart(cart.map(item => item.id === product.id ? { ...item, quantity: requestedQuantity } : item));
     } else {
       setCart([...cart, { ...product, quantity }]);
     }
@@ -315,7 +327,20 @@ function App() {
       removeFromCart(productId);
       return;
     }
-    setCart(cart.map(item => item.id === productId ? { ...item, quantity } : item));
+
+    const product = products.find(item => item.id === productId) || cart.find(item => item.id === productId);
+    const availableStock = Number(product?.stock);
+    const safeQuantity = Number.isFinite(availableStock) ? Math.min(quantity, availableStock) : quantity;
+
+    if (safeQuantity < quantity) {
+      toast({
+        title: "Stock máximo alcanzado",
+        description: `Solo quedan ${availableStock} unidades disponibles.`,
+        variant: "destructive"
+      });
+    }
+
+    setCart(cart.map(item => item.id === productId ? { ...item, quantity: safeQuantity } : item));
   };
 
   const handleLogout = async () => {
@@ -465,6 +490,7 @@ function App() {
                 onRemoveItem={removeFromCart} 
                 onUpdateQuantity={updateCartQuantity} 
                 user={user}
+                profile={profile}
                 onOpenCheckout={() => {
                   setIsCartOpen(false);
                   setIsCheckoutOpen(true);
@@ -507,6 +533,10 @@ function App() {
                 onCreateProduct={handleCreateProduct}
                 orders={orders}
                 onUpdateOrder={handleUpdateOrder}
+                onPaymentConfirmed={() => {
+                  fetchProducts();
+                  fetchOrders();
+                }}
               />
             )}
           </AnimatePresence>
