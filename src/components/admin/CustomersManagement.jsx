@@ -18,6 +18,7 @@ import {
   Line
 } from 'recharts';
 import { getCustomerAnalytics } from '@/lib/adminQueries';
+import { supabase } from '@/lib/customSupabaseClient';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'];
 
@@ -31,6 +32,34 @@ const CustomersManagement = () => {
 
   useEffect(() => {
     loadCustomers();
+
+    const channel = supabase
+      .channel(`customers-management-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profiles' },
+        () => loadCustomers()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders' },
+        () => loadCustomers()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'order_items' },
+        () => loadCustomers()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'fact_sales' },
+        () => loadCustomers()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const loadCustomers = async () => {
@@ -38,7 +67,7 @@ const CustomersManagement = () => {
     try {
       // El KPI y el listado deben representar todos los clientes de dim_customers.
       const { data, source } = await getCustomerAnalytics(10000);
-      setDataSource(source || 'fact_sales + dim_customers');
+      setDataSource(source || 'profiles + orders + fact_sales');
       if (data) {
         setCustomers(data);
         processCustomerData(data);
@@ -104,7 +133,7 @@ const CustomersManagement = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Análisis de Clientes</h2>
-          <p className="text-gray-600 mt-1">Estadísticas y comportamiento de tus clientes · Fuente: {dataSource || 'fact_sales + dim_customers'}</p>
+          <p className="text-gray-600 mt-1">Clientes registrados y comportamiento · Fuente: {dataSource || 'profiles + orders + fact_sales'}</p>
         </div>
         <div className="flex gap-3">
           <Button

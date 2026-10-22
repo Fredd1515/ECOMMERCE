@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui';
-import { updateCustomerBehavior } from '@/lib/datawarehouseQueries';
+import { updateCustomerBehavior, upsertProfile } from '@/lib/datawarehouseQueries';
 
 const AuthContext = createContext(undefined);
 
@@ -56,6 +56,18 @@ export const AuthProvider = ({ children }) => {
       if (data.user && data.session) {
         // El registro sin confirmación de correo entrega la sesión inmediatamente.
         await handleSession(data.session);
+
+        // Auth y profiles son tablas distintas. Garantizamos que cada alta
+        // también exista en el listado de clientes del panel administrativo.
+        const profileResult = await upsertProfile({
+          id: data.user.id,
+          email: data.user.email || email,
+          first_name: options?.data?.first_name || '',
+          last_name: options?.data?.last_name || ''
+        });
+        if (profileResult.error) {
+          console.warn('No se pudo crear el perfil del cliente; el trigger de Supabase lo reintentará:', profileResult.error);
+        }
 
         toast({
           title: "¡Cuenta creada!",

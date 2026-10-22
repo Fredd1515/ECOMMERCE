@@ -131,7 +131,8 @@ Completa los valores de acuerdo con la siguiente tabla.
 |---|---:|---|
 | <code>VITE_SUPABASE_URL</code> | Sí | URL del proyecto Supabase. |
 | <code>VITE_SUPABASE_ANON_KEY</code> | Sí | Clave pública anon/publishable de Supabase. |
-| <code>VITE_GEMINI_MODEL</code> | Opcional | Modelo Gemini usado por Puter.js; por defecto <code>gemini-3.8-flash</code>. |
+| <code>GEMINI_API_KEY</code> | Sí para Gemini | Clave privada usada únicamente por <code>/api/gemini</code>. Nunca se publica en el navegador. |
+| <code>GEMINI_MODEL</code> | Opcional | Modelo de Gemini en el servidor; por defecto <code>gemini-2.0-flash</code>. |
 | <code>GROQ_API_KEY</code> | Sí para IA | Clave privada utilizada por DataBot mediante <code>/api/groq</code>. |
 | <code>OPENROUTER_API_KEY</code> | Sí para IA | Clave privada utilizada por StockBot mediante <code>/api/openrouter</code>. |
 | <code>OPENROUTER_MODEL</code> | Opcional | Modelo de OpenRouter; por defecto <code>nvidia/nemotron-3.5-lightning:free</code>. |
@@ -155,7 +156,7 @@ No uses la clave <code>service_role</code> en el navegador, en <code>.env.local<
 
 ### Proveedores de IA en desarrollo local
 
-Para ejecutar <code>pnpm dev</code>, Puter.js conecta FarmaBot y el orquestador con Gemini sin API key propia. Solo configura las claves privadas de <code>GROQ_API_KEY</code> y <code>OPENROUTER_API_KEY</code> para los otros dos agentes.
+Para ejecutar <code>pnpm dev</code>, configura <code>GEMINI_API_KEY</code> junto con las claves privadas de <code>GROQ_API_KEY</code> y <code>OPENROUTER_API_KEY</code>. Si no existe <code>GEMINI_API_KEY</code>, el proxy usa Groq como fallback cuando <code>GROQ_API_KEY</code> está disponible.
 
 ### Ejemplo de archivo local
 
@@ -164,7 +165,8 @@ El archivo debe conservar los nombres exactos. Sustituye únicamente los valores
 ~~~env
 VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
 VITE_SUPABASE_ANON_KEY=tu-clave-publica-de-supabase
-VITE_GEMINI_MODEL=gemini-3.8-flash
+GEMINI_API_KEY=tu-clave-privada-de-gemini
+GEMINI_MODEL=gemini-2.0-flash
 GROQ_API_KEY=tu-clave-de-groq
 OPENROUTER_API_KEY=tu-clave-de-openrouter
 OPENROUTER_MODEL=nvidia/nemotron-3.5-lightning:free
@@ -220,9 +222,11 @@ order by table_name;
 
 ### 3. Checkout y confirmación manual de pago
 
-Ejecuta una sola vez el archivo <code>supabase/atomic_checkout.sql</code> en <code>Supabase → SQL Editor</code>. El checkout registra el pedido como pendiente junto con el número de operación. El administrador lo revisa desde <code>Panel de Administración → Pedidos</code> y utiliza <code>Confirmar pago</code> o <code>Rechazar</code>.
+Ejecuta el archivo <code>supabase/atomic_checkout.sql</code> en <code>Supabase → SQL Editor</code> (si ya lo ejecutaste antes, vuelve a ejecutarlo para instalar el sincronizador corregido y reparar pedidos confirmados anteriores). El checkout registra el pedido como pendiente junto con el número de operación. El administrador lo revisa desde <code>Panel de Administración → Pedidos</code> y utiliza <code>Confirmar pago</code> o <code>Rechazar</code>.
 
-El stock solo se descuenta cuando el administrador confirma el pago. Esa confirmación valida el stock con bloqueo y actualiza pedido, inventario y auditoría dentro de la misma transacción.
+El stock solo se descuenta cuando el administrador confirma el pago. Esa confirmación valida el stock con bloqueo y actualiza el pedido, <code>fact_sales</code>, las dimensiones del data warehouse y el inventario dentro de la misma transacción. La operación es idempotente: repetir la confirmación no duplica ventas.
+
+Para que el dashboard, los pedidos y el análisis de ventas se actualicen sin recargar la página, ejecuta también <code>supabase/realtime_dashboard.sql</code> una vez en el mismo proyecto.
 
 Después de ejecutarlo, prueba una compra con un producto de stock conocido y confirma que:
 
@@ -343,46 +347,48 @@ pnpm preview
 
 El modo local sirve para desarrollar. Para que los usuarios entren desde cualquier dispositivo necesitas desplegar la aplicación en Vercel u otro proveedor de hosting.
 
-## Configuración de Puter.js, Groq y OpenRouter
+## Configuración de Gemini, Groq y OpenRouter
 
 ### Desarrollo local
 
-Puter.js proporciona el acceso a Gemini para FarmaBot y el orquestador sin que la aplicación gestione una clave de Google. Opcionalmente puedes elegir el modelo con <code>VITE_GEMINI_MODEL</code>.
+Gemini se consume mediante el endpoint privado <code>/api/gemini</code>. La clave permanece en el servidor y los usuarios no necesitan una cuenta de Puter.
 
 En <code>.env.local</code> configura las claves privadas de Groq y OpenRouter:
 
 ~~~env
-VITE_GEMINI_MODEL=gemini-3.8-flash
+GEMINI_API_KEY=tu-clave-privada-de-gemini
+GEMINI_MODEL=gemini-2.0-flash
 GROQ_API_KEY=tu-clave-de-groq
 OPENROUTER_API_KEY=tu-clave-de-openrouter
 OPENROUTER_MODEL=nvidia/nemotron-3.5-lightning:free
 ~~~
 
-Reinicia Vite y abre el chat. En desarrollo, el navegador usa Puter.js para Gemini y los proxies locales <code>/api/groq</code> y <code>/api/openrouter</code> para los otros proveedores.
+Reinicia Vite y abre el chat. En desarrollo, el navegador usa el proxy local <code>/api/gemini</code> y los proxies locales <code>/api/groq</code> y <code>/api/openrouter</code>.
 
 ### Producción en Vercel
 
-En producción, Groq y OpenRouter permanecen protegidos en el servidor. Puter.js gestiona el acceso de Gemini desde el cliente según su modelo de uso:
+En producción, los tres proveedores permanecen protegidos en el servidor:
 
-1. FarmaBot y el orquestador llaman a <code>puter.ai.chat()</code> con Gemini.
+1. FarmaBot y el orquestador llaman a <code>/api/gemini</code>.
 2. DataBot llama a <code>/api/groq</code> y StockBot a <code>/api/openrouter</code>.
-3. Vercel ejecuta los dos proxies serverless y lee sus claves privadas.
-4. Gemini sintetiza las respuestas de FarmaBot, DataBot y StockBot mediante Puter.js.
+3. Vercel ejecuta los tres proxies serverless y lee sus claves privadas.
+4. Gemini sintetiza las respuestas sin pedir autenticación de Puter.
 
 Configura en Vercel:
 
 | Nombre | Tipo | Entorno |
 |---|---|---|
-| <code>VITE_GEMINI_MODEL</code> | Variable | Production |
+| <code>GEMINI_API_KEY</code> | Secret | Production |
+| <code>GEMINI_MODEL</code> | Variable | Production |
 | <code>GROQ_API_KEY</code> | Secret | Production |
 | <code>OPENROUTER_API_KEY</code> | Secret | Production |
 | <code>OPENROUTER_MODEL</code> | Variable | Production |
 
-No configures claves privadas de Groq u OpenRouter con prefijo <code>VITE_</code>. <code>VITE_GEMINI_MODEL</code> no es una clave y puede estar disponible en el navegador.
+No configures claves privadas de Gemini, Groq u OpenRouter con prefijo <code>VITE_</code>.
 
 Después de guardar la variable:
 
-1. Verifica que los archivos <code>api/groq.js</code> y <code>api/openrouter.js</code> estén en la raíz del repositorio.
+1. Verifica que los archivos <code>api/gemini.js</code>, <code>api/groq.js</code> y <code>api/openrouter.js</code> estén en la raíz del repositorio.
 2. Haz un nuevo despliegue en Vercel.
 3. Abre la URL pública.
 4. Envía un mensaje desde el asistente multiagente.
@@ -458,7 +464,6 @@ Agrega para <code>Production</code>:
 ~~~text
 VITE_SUPABASE_URL
 VITE_SUPABASE_ANON_KEY
-VITE_GEMINI_MODEL
 GROQ_API_KEY
 OPENROUTER_API_KEY
 OPENROUTER_MODEL
@@ -468,7 +473,7 @@ VITE_PHARMACY_ORIGIN_LAT
 VITE_PHARMACY_ORIGIN_LNG
 ~~~
 
-Las variables de Google Maps, el modelo Gemini y la dirección son opcionales. <code>GROQ_API_KEY</code> y <code>OPENROUTER_API_KEY</code> deben ser privadas y no deben tener prefijo <code>VITE_</code>.
+Las variables de Google Maps, <code>GEMINI_MODEL</code> y la dirección son opcionales. <code>GEMINI_API_KEY</code>, <code>GROQ_API_KEY</code> y <code>OPENROUTER_API_KEY</code> deben ser privadas y no deben tener prefijo <code>VITE_</code>.
 
 Para variables que también necesites en previews, selecciona además <code>Preview</code>. No es necesario copiar claves privadas a todos los entornos.
 
@@ -568,14 +573,14 @@ La confirmación de correo sigue activada o Supabase intentó enviar un correo s
 
 En local:
 
-- Configura <code>GROQ_API_KEY</code> y <code>OPENROUTER_API_KEY</code> en <code>.env.local</code>. Gemini se conecta mediante Puter.js y no requiere API key.
+- Configura <code>GEMINI_API_KEY</code>, <code>GROQ_API_KEY</code> y <code>OPENROUTER_API_KEY</code> en <code>.env.local</code>.
 - Reinicia Vite.
 
 En Vercel:
 
 - Configura las dos variables privadas de Groq y OpenRouter, sin prefijo <code>VITE_</code>.
 - Selecciona <code>Production</code>.
-- Confirma que <code>api/groq.js</code> esté publicado.
+- Confirma que <code>api/gemini.js</code> y <code>api/groq.js</code> estén publicados.
 - Ejecuta un nuevo deploy.
 - Elimina cualquier clave privada antigua con prefijo <code>VITE_</code> de Vercel.
 

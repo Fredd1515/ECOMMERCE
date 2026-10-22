@@ -6,6 +6,7 @@ import { supabase } from './customSupabaseClient';
 import {
   getWarehouseDashboardMetrics,
   getWarehouseSalesChartData,
+  getWarehouseDailySales,
   getWarehouseProductSales,
   getWarehouseCustomerAnalytics,
   getWarehouseOrders,
@@ -128,6 +129,10 @@ export const getSalesByPeriod = async (startDate, endDate) => {
   return getWarehouseProductSales(startDate, endDate);
 };
 
+export const getDailySalesByPeriod = async (days = 7) => {
+  return getWarehouseDailySales(days);
+};
+
 /**
  * Obtiene análisis de ventas por producto en un período
  */
@@ -175,6 +180,16 @@ export const subscribeToDashboardChanges = (callback, onStatusChange) => {
       'postgres_changes',
       { event: '*', schema: 'public', table: 'fact_inventory' },
       (payload) => callback(payload, 'fact_inventory')
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'profiles' },
+      (payload) => callback(payload, 'profiles')
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'order_items' },
+      (payload) => callback(payload, 'order_items')
     )
     .on(
       'postgres_changes',

@@ -11,6 +11,7 @@ import {
   rejectOrderPayment,
   updateOrderStatus
 } from '@/lib/datawarehouseQueries';
+import { supabase } from '@/lib/customSupabaseClient';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const STATUS_CONFIG = {
@@ -124,7 +125,7 @@ const OrdersManagement = ({ onUpdateOrder, onPaymentConfirmed }) => {
       setStats({ pending: 0, processing: 0, shipped: 0, delivered: 0, cancelled: 0, totalRevenue: 0 });
       toast({
         title: 'No se pudieron cargar los pedidos',
-        description: 'Revisa el acceso a fact_sales y las dimensiones del data warehouse.',
+        description: 'Revisa el acceso a orders, order_items y fact_sales en Supabase.',
         variant: 'destructive'
       });
     } finally {
@@ -133,6 +134,33 @@ const OrdersManagement = ({ onUpdateOrder, onPaymentConfirmed }) => {
   }, []);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
+
+  useEffect(() => {
+    // Mantiene pedidos, estados y totales visibles sincronizados entre
+    // pestañas y usuarios cuando se confirma o rechaza un pago.
+    const channel = supabase
+      .channel(`orders-management-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders' },
+        () => loadOrders()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'order_items' },
+        () => loadOrders()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'fact_sales' },
+        () => loadOrders()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [loadOrders]);
 
   // ── Handle status change ────────────────────────────────────────────────────
   const handleStatusChange = async (orderId, newStatus) => {
