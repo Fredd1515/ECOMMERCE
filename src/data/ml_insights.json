@@ -1,367 +1,191 @@
 {
-  "generated_at": "2026-10-10 22:42:01",
+  "generated_at": "2026-10-21 22:25:56",
   "kpis_generales": {
     "total_ventas_historicas": 500,
-    "ingresos_totales_soles": 20450.19,
-    "ticket_promedio_soles": 40.9,
+    "ingresos_totales_soles": 21285.17,
+    "ticket_promedio_soles": 42.57,
     "periodo_analizado": "2024-01-15 a 2024-10-10"
   },
   "metricas_modelo_ml": {
-    "mae": 0.587,
-    "rmse": 0.885,
-    "r2": -0.137
+    "mae": 0.412,
+    "rmse": 0.774,
+    "r2": 0.028,
+    "algorithm": "Ridge Regression",
+    "baseline_lag_7": {
+      "mae": 0.415,
+      "rmse": 1.048,
+      "r2": -0.782
+    },
+    "validation": "holdout temporal 80/20"
   },
+  "algoritmo_seleccionado": "Ridge Regression",
+  "algoritmos_comparacion": [
+    {
+      "key": "random_forest",
+      "name": "Random Forest",
+      "family": "Ensemble de árboles",
+      "reason": "Captura relaciones no lineales y efectos combinados entre producto, calendario y lags; además ofrece importancia de variables.",
+      "mae": 0.496,
+      "rmse": 0.814,
+      "r2": -0.076,
+      "selected": false
+    },
+    {
+      "key": "gradient_boosting",
+      "name": "Gradient Boosting",
+      "family": "Boosting secuencial",
+      "reason": "Corrige los errores de modelos anteriores y suele detectar cambios sutiles de demanda con buen nivel de precisión.",
+      "mae": 0.446,
+      "rmse": 0.777,
+      "r2": 0.02,
+      "selected": false
+    },
+    {
+      "key": "extra_trees",
+      "name": "Extra Trees",
+      "family": "Ensemble aleatorio",
+      "reason": "Aporta una segunda perspectiva basada en árboles muy aleatorizados, reduce varianza y es resistente a valores atípicos.",
+      "mae": 0.518,
+      "rmse": 0.88,
+      "r2": -0.258,
+      "selected": false
+    },
+    {
+      "key": "hist_gradient_boosting",
+      "name": "HistGradientBoosting",
+      "family": "Boosting por histogramas",
+      "reason": "Modela patrones no lineales de forma eficiente y es una alternativa escalable para crecer con más ventas históricas.",
+      "mae": 0.433,
+      "rmse": 0.783,
+      "r2": 0.005,
+      "selected": false
+    },
+    {
+      "key": "ridge",
+      "name": "Ridge Regression",
+      "family": "Regresión lineal regularizada",
+      "reason": "Funciona como referencia interpretable y estable; la regularización controla la multicolinealidad de lags y variables calendario.",
+      "mae": 0.412,
+      "rmse": 0.774,
+      "r2": 0.028,
+      "selected": true
+    }
+  ],
   "pronostico_demanda_30_dias": {
     "Ibuprofeno 400mg": {
       "product_key": 1,
       "category": "Medicamentos",
       "unit_price": 12.0,
-      "projected_units_7d": 5.4,
-      "projected_units_15d": 10.4,
-      "projected_units_30d": 19.8,
-      "projected_revenue_30d": 237.6
+      "projected_units_7d": 3.4,
+      "projected_units_15d": 7.3,
+      "projected_units_30d": 14.7,
+      "projected_revenue_30d": 176.4
     },
     "Amoxicilina 500mg": {
       "product_key": 2,
       "category": "Medicamentos",
       "unit_price": 18.5,
-      "projected_units_7d": 3.2,
-      "projected_units_15d": 5.5,
-      "projected_units_30d": 11.6,
-      "projected_revenue_30d": 214.6
+      "projected_units_7d": 1.4,
+      "projected_units_15d": 2.8,
+      "projected_units_30d": 5.7,
+      "projected_revenue_30d": 105.45
     },
     "Vitamina C 1000mg + Zinc": {
       "product_key": 3,
       "category": "Vitaminas",
       "unit_price": 28.9,
-      "projected_units_7d": 2.5,
-      "projected_units_15d": 6.6,
-      "projected_units_30d": 14.5,
-      "projected_revenue_30d": 419.05
+      "projected_units_7d": 2.0,
+      "projected_units_15d": 4.3,
+      "projected_units_30d": 8.7,
+      "projected_revenue_30d": 251.43
     },
     "Protector Solar Facial FPS 50+": {
       "product_key": 4,
       "category": "Cuidado Personal",
       "unit_price": 65.0,
-      "projected_units_7d": 2.1,
-      "projected_units_15d": 4.6,
-      "projected_units_30d": 9.2,
-      "projected_revenue_30d": 598.0
+      "projected_units_7d": 1.2,
+      "projected_units_15d": 2.5,
+      "projected_units_30d": 5.1,
+      "projected_revenue_30d": 331.5
     },
     "Alcohol en Gel Antibacterial 70%": {
       "product_key": 5,
       "category": "Primeros Auxilios",
       "unit_price": 9.5,
-      "projected_units_7d": 1.7,
-      "projected_units_15d": 8.8,
-      "projected_units_30d": 17.5,
-      "projected_revenue_30d": 166.25
+      "projected_units_7d": 1.2,
+      "projected_units_15d": 2.6,
+      "projected_units_30d": 5.2,
+      "projected_revenue_30d": 49.4
     },
     "Pañales Hipoalergénicos Talla M": {
       "product_key": 6,
       "category": "Bebés y Maternidad",
       "unit_price": 42.0,
-      "projected_units_7d": 3.6,
-      "projected_units_15d": 9.3,
-      "projected_units_30d": 21.8,
-      "projected_revenue_30d": 915.6
+      "projected_units_7d": 1.1,
+      "projected_units_15d": 2.0,
+      "projected_units_30d": 3.8,
+      "projected_revenue_30d": 159.6
     },
     "Complejo B Multivitamínico": {
       "product_key": 7,
       "category": "Vitaminas",
       "unit_price": 32.0,
-      "projected_units_7d": 2.0,
-      "projected_units_15d": 6.3,
-      "projected_units_30d": 15.5,
-      "projected_revenue_30d": 496.0
+      "projected_units_7d": 1.7,
+      "projected_units_15d": 3.6,
+      "projected_units_30d": 7.2,
+      "projected_revenue_30d": 230.4
     },
     "Jarabe para la Tos y Garganta": {
       "product_key": 8,
       "category": "Medicamentos",
       "unit_price": 16.8,
-      "projected_units_7d": 3.7,
-      "projected_units_15d": 7.9,
-      "projected_units_30d": 20.5,
-      "projected_revenue_30d": 344.4
+      "projected_units_7d": 2.9,
+      "projected_units_15d": 6.0,
+      "projected_units_30d": 12.1,
+      "projected_revenue_30d": 203.28
     },
     "Crema Cicatrizante y Reparadora": {
       "product_key": 9,
       "category": "Cuidado Personal",
       "unit_price": 39.5,
-      "projected_units_7d": 1.1,
-      "projected_units_15d": 3.3,
-      "projected_units_30d": 9.6,
-      "projected_revenue_30d": 379.2
+      "projected_units_7d": 0.8,
+      "projected_units_15d": 1.6,
+      "projected_units_30d": 3.2,
+      "projected_revenue_30d": 126.4
     },
     "Serum Ácido Hialurónico Hidratante": {
       "product_key": 10,
       "category": "Cuidado Personal",
       "unit_price": 89.0,
-      "projected_units_7d": 1.3,
-      "projected_units_15d": 3.7,
-      "projected_units_30d": 9.5,
-      "projected_revenue_30d": 845.5
+      "projected_units_7d": 0.7,
+      "projected_units_15d": 1.4,
+      "projected_units_30d": 2.8,
+      "projected_revenue_30d": 249.2
     },
     "Termómetro Digital Infrarrojo": {
       "product_key": 11,
       "category": "Primeros Auxilios",
       "unit_price": 45.0,
-      "projected_units_7d": 0.1,
-      "projected_units_15d": 0.3,
-      "projected_units_30d": 1.1,
-      "projected_revenue_30d": 49.5
+      "projected_units_7d": 0.7,
+      "projected_units_15d": 1.4,
+      "projected_units_30d": 2.9,
+      "projected_revenue_30d": 130.5
     },
     "Paracetamol 500mg": {
       "product_key": 12,
       "category": "Medicamentos",
       "unit_price": 8.5,
-      "projected_units_7d": 4.2,
-      "projected_units_15d": 8.1,
-      "projected_units_30d": 18.9,
-      "projected_revenue_30d": 160.65
+      "projected_units_7d": 2.3,
+      "projected_units_15d": 5.1,
+      "projected_units_30d": 10.3,
+      "projected_revenue_30d": 87.55
     }
   },
   "segmentacion_clientes": {
     "resumen": {
-      "Cliente Leal / Frecuente": 23,
-      "En Riesgo de Abandono (Churn)": 16,
-      "Cliente VIP / Champion": 11
-    },
-    "clientes_en_riesgo_abandono": [
-      {
-        "customer_key": 4,
-        "full_name": "Lucía Rodríguez",
-        "email": "lucía.rodríguez630@gmail.com",
-        "city": "Lima",
-        "recency": 68,
-        "frequency": 8,
-        "monetary": 234.5
-      },
-      {
-        "customer_key": 7,
-        "full_name": "Diego Romero",
-        "email": "diego.romero398@gmail.com",
-        "city": "Arequipa",
-        "recency": 142,
-        "frequency": 6,
-        "monetary": 257.3
-      },
-      {
-        "customer_key": 8,
-        "full_name": "Sofía Flores",
-        "email": "sofía.flores911@gmail.com",
-        "city": "Cerro de Pasco",
-        "recency": 80,
-        "frequency": 11,
-        "monetary": 416.77
-      },
-      {
-        "customer_key": 13,
-        "full_name": "Diego Paredes",
-        "email": "diego.paredes973@gmail.com",
-        "city": "Huancayo",
-        "recency": 16,
-        "frequency": 7,
-        "monetary": 252.2
-      },
-      {
-        "customer_key": 17,
-        "full_name": "Jorge Mamani",
-        "email": "jorge.mamani237@gmail.com",
-        "city": "Lima",
-        "recency": 104,
-        "frequency": 9,
-        "monetary": 480.85
-      },
-      {
-        "customer_key": 24,
-        "full_name": "Diego Rodríguez",
-        "email": "diego.rodríguez765@gmail.com",
-        "city": "Cerro de Pasco",
-        "recency": 46,
-        "frequency": 6,
-        "monetary": 220.1
-      },
-      {
-        "customer_key": 25,
-        "full_name": "Pedro Rodríguez",
-        "email": "pedro.rodríguez924@gmail.com",
-        "city": "Yanahuanca",
-        "recency": 50,
-        "frequency": 6,
-        "monetary": 328.15999999999997
-      },
-      {
-        "customer_key": 26,
-        "full_name": "María Romero",
-        "email": "maría.romero813@gmail.com",
-        "city": "Tarma",
-        "recency": 4,
-        "frequency": 7,
-        "monetary": 198.4
-      },
-      {
-        "customer_key": 29,
-        "full_name": "Ana García",
-        "email": "ana.garcía664@gmail.com",
-        "city": "Huánuco",
-        "recency": 76,
-        "frequency": 11,
-        "monetary": 528.81
-      },
-      {
-        "customer_key": 31,
-        "full_name": "Fernando Romero",
-        "email": "fernando.romero470@gmail.com",
-        "city": "Huancayo",
-        "recency": 7,
-        "frequency": 4,
-        "monetary": 327.1
-      },
-      {
-        "customer_key": 32,
-        "full_name": "David Huamán",
-        "email": "david.huamán26@gmail.com",
-        "city": "Yanahuanca",
-        "recency": 33,
-        "frequency": 6,
-        "monetary": 487.3
-      },
-      {
-        "customer_key": 37,
-        "full_name": "Valeria Quispe",
-        "email": "valeria.quispe620@gmail.com",
-        "city": "Huancayo",
-        "recency": 56,
-        "frequency": 9,
-        "monetary": 396.96
-      },
-      {
-        "customer_key": 43,
-        "full_name": "María Mamani",
-        "email": "maría.mamani500@gmail.com",
-        "city": "Trujillo",
-        "recency": 42,
-        "frequency": 8,
-        "monetary": 212.45
-      },
-      {
-        "customer_key": 44,
-        "full_name": "David Vargas",
-        "email": "david.vargas675@gmail.com",
-        "city": "Trujillo",
-        "recency": 60,
-        "frequency": 4,
-        "monetary": 178.0
-      },
-      {
-        "customer_key": 47,
-        "full_name": "Claudia Vargas",
-        "email": "claudia.vargas89@gmail.com",
-        "city": "Lima",
-        "recency": 53,
-        "frequency": 9,
-        "monetary": 345.4
-      },
-      {
-        "customer_key": 49,
-        "full_name": "Carmen Sánchez",
-        "email": "carmen.sánchez90@gmail.com",
-        "city": "Cerro de Pasco",
-        "recency": 24,
-        "frequency": 7,
-        "monetary": 337.86
-      }
-    ],
-    "clientes_vip": [
-      {
-        "customer_key": 3,
-        "full_name": "Diego Castro",
-        "email": "diego.castro165@gmail.com",
-        "city": "Yanahuanca",
-        "frequency": 17,
-        "monetary": 583.47
-      },
-      {
-        "customer_key": 6,
-        "full_name": "Lucía Sánchez",
-        "email": "lucía.sánchez262@gmail.com",
-        "city": "Huancayo",
-        "frequency": 13,
-        "monetary": 564.74
-      },
-      {
-        "customer_key": 11,
-        "full_name": "Miguel Sánchez",
-        "email": "miguel.sánchez170@gmail.com",
-        "city": "Huancayo",
-        "frequency": 9,
-        "monetary": 1058.7
-      },
-      {
-        "customer_key": 16,
-        "full_name": "David Sánchez",
-        "email": "david.sánchez485@gmail.com",
-        "city": "Tarma",
-        "frequency": 15,
-        "monetary": 539.6
-      },
-      {
-        "customer_key": 19,
-        "full_name": "Miguel Sánchez",
-        "email": "miguel.sánchez788@gmail.com",
-        "city": "Lima",
-        "frequency": 15,
-        "monetary": 599.42
-      },
-      {
-        "customer_key": 21,
-        "full_name": "Valeria Rodríguez",
-        "email": "valeria.rodríguez770@gmail.com",
-        "city": "Huánuco",
-        "frequency": 10,
-        "monetary": 668.78
-      },
-      {
-        "customer_key": 22,
-        "full_name": "Patricia Gutiérrez",
-        "email": "patricia.gutiérrez46@gmail.com",
-        "city": "Huancayo",
-        "frequency": 14,
-        "monetary": 715.01
-      },
-      {
-        "customer_key": 23,
-        "full_name": "Pedro Sánchez",
-        "email": "pedro.sánchez962@gmail.com",
-        "city": "Arequipa",
-        "frequency": 12,
-        "monetary": 678.5799999999999
-      },
-      {
-        "customer_key": 27,
-        "full_name": "Lucía Torres",
-        "email": "lucía.torres728@gmail.com",
-        "city": "Trujillo",
-        "frequency": 14,
-        "monetary": 538.4300000000001
-      },
-      {
-        "customer_key": 33,
-        "full_name": "David Mendoza",
-        "email": "david.mendoza149@gmail.com",
-        "city": "Cerro de Pasco",
-        "frequency": 12,
-        "monetary": 658.99
-      },
-      {
-        "customer_key": 34,
-        "full_name": "Luis Flores",
-        "email": "luis.flores109@gmail.com",
-        "city": "Lima",
-        "frequency": 17,
-        "monetary": 620.07
-      }
-    ]
+      "Cliente Leal / Frecuente": 20,
+      "En Riesgo de Abandono (Churn)": 18,
+      "Cliente VIP / Champion": 12
+    }
   }
 }

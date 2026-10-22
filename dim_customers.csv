@@ -1,51 +1,51 @@
-customer_key,email,first_name,last_name,full_name,phone,address,city,state,country,customer_type,registration_date,is_active
-1,diego.castillo128@gmail.com,Diego,Castillo,Diego Castillo,+51 953076121,Av. Los Libertadores 396,Huánuco,Perú,Perú,regular,2024-03-25,true
-2,pedro.quispe609@gmail.com,Pedro,Quispe,Pedro Quispe,+51 985480379,Av. Los Libertadores 570,Tarma,Perú,Perú,regular,2024-03-08,true
-3,diego.castro165@gmail.com,Diego,Castro,Diego Castro,+51 987528195,Av. Los Libertadores 314,Yanahuanca,Pasco,Perú,regular,2023-11-01,true
-4,lucía.rodríguez630@gmail.com,Lucía,Rodríguez,Lucía Rodríguez,+51 915196045,Av. Los Libertadores 322,Lima,Perú,Perú,premium,2023-11-26,true
-5,jorge.quispe731@gmail.com,Jorge,Quispe,Jorge Quispe,+51 982268901,Av. Los Libertadores 162,Arequipa,Perú,Perú,regular,2023-11-15,true
-6,lucía.sánchez262@gmail.com,Lucía,Sánchez,Lucía Sánchez,+51 938001302,Av. Los Libertadores 700,Huancayo,Perú,Perú,regular,2024-02-17,true
-7,diego.romero398@gmail.com,Diego,Romero,Diego Romero,+51 988943613,Av. Los Libertadores 242,Arequipa,Perú,Perú,premium,2024-04-22,true
-8,sofía.flores911@gmail.com,Sofía,Flores,Sofía Flores,+51 914299663,Av. Los Libertadores 123,Cerro de Pasco,Pasco,Perú,premium,2023-08-21,true
-9,carlos.díaz537@gmail.com,Carlos,Díaz,Carlos Díaz,+51 995595614,Av. Los Libertadores 401,Yanahuanca,Pasco,Perú,regular,2023-11-18,true
-10,ana.flores778@gmail.com,Ana,Flores,Ana Flores,+51 932190754,Av. Los Libertadores 652,Huancayo,Perú,Perú,regular,2023-06-05,true
-11,miguel.sánchez170@gmail.com,Miguel,Sánchez,Miguel Sánchez,+51 917018720,Av. Los Libertadores 162,Huancayo,Perú,Perú,regular,2023-09-04,true
-12,valeria.romero344@gmail.com,Valeria,Romero,Valeria Romero,+51 988163961,Av. Los Libertadores 505,Huancayo,Perú,Perú,regular,2023-08-03,true
-13,diego.paredes973@gmail.com,Diego,Paredes,Diego Paredes,+51 981302873,Av. Los Libertadores 353,Huancayo,Perú,Perú,regular,2024-01-02,true
-14,miguel.sánchez92@gmail.com,Miguel,Sánchez,Miguel Sánchez,+51 952317689,Av. Los Libertadores 560,Cerro de Pasco,Pasco,Perú,regular,2023-10-23,true
-15,carmen.castro90@gmail.com,Carmen,Castro,Carmen Castro,+51 935597253,Av. Los Libertadores 101,Cerro de Pasco,Pasco,Perú,regular,2024-01-04,true
-16,david.sánchez485@gmail.com,David,Sánchez,David Sánchez,+51 976452960,Av. Los Libertadores 899,Tarma,Perú,Perú,regular,2023-10-24,true
-17,jorge.mamani237@gmail.com,Jorge,Mamani,Jorge Mamani,+51 967910854,Av. Los Libertadores 292,Lima,Perú,Perú,premium,2024-03-21,true
-18,juan.castro318@gmail.com,Juan,Castro,Juan Castro,+51 946541240,Av. Los Libertadores 440,Huánuco,Perú,Perú,premium,2023-07-09,true
-19,miguel.sánchez788@gmail.com,Miguel,Sánchez,Miguel Sánchez,+51 999753042,Av. Los Libertadores 641,Lima,Perú,Perú,regular,2024-02-21,true
-20,sofía.romero517@gmail.com,Sofía,Romero,Sofía Romero,+51 933026733,Av. Los Libertadores 380,Huánuco,Perú,Perú,regular,2023-07-12,true
-21,valeria.rodríguez770@gmail.com,Valeria,Rodríguez,Valeria Rodríguez,+51 936725697,Av. Los Libertadores 318,Huánuco,Perú,Perú,regular,2024-04-11,true
-22,patricia.gutiérrez46@gmail.com,Patricia,Gutiérrez,Patricia Gutiérrez,+51 962308546,Av. Los Libertadores 457,Huancayo,Perú,Perú,vip,2024-01-15,true
-23,pedro.sánchez962@gmail.com,Pedro,Sánchez,Pedro Sánchez,+51 917148164,Av. Los Libertadores 323,Arequipa,Perú,Perú,regular,2024-04-01,true
-24,diego.rodríguez765@gmail.com,Diego,Rodríguez,Diego Rodríguez,+51 994377748,Av. Los Libertadores 695,Cerro de Pasco,Pasco,Perú,regular,2024-04-11,true
-25,pedro.rodríguez924@gmail.com,Pedro,Rodríguez,Pedro Rodríguez,+51 964313859,Av. Los Libertadores 318,Yanahuanca,Pasco,Perú,regular,2023-08-04,true
-26,maría.romero813@gmail.com,María,Romero,María Romero,+51 939961332,Av. Los Libertadores 839,Tarma,Perú,Perú,regular,2024-01-31,true
-27,lucía.torres728@gmail.com,Lucía,Torres,Lucía Torres,+51 988673901,Av. Los Libertadores 299,Trujillo,Perú,Perú,premium,2023-09-20,true
-28,carlos.díaz492@gmail.com,Carlos,Díaz,Carlos Díaz,+51 964359426,Av. Los Libertadores 424,Yanahuanca,Pasco,Perú,regular,2023-09-05,true
-29,ana.garcía664@gmail.com,Ana,García,Ana García,+51 995789213,Av. Los Libertadores 989,Huánuco,Perú,Perú,vip,2024-04-12,true
-30,juan.mamani388@gmail.com,Juan,Mamani,Juan Mamani,+51 947393874,Av. Los Libertadores 476,Tarma,Perú,Perú,regular,2023-09-27,true
-31,fernando.romero470@gmail.com,Fernando,Romero,Fernando Romero,+51 941552485,Av. Los Libertadores 511,Huancayo,Perú,Perú,regular,2023-09-20,true
-32,david.huamán26@gmail.com,David,Huamán,David Huamán,+51 969120859,Av. Los Libertadores 973,Yanahuanca,Pasco,Perú,regular,2023-11-08,true
-33,david.mendoza149@gmail.com,David,Mendoza,David Mendoza,+51 957309165,Av. Los Libertadores 573,Cerro de Pasco,Pasco,Perú,regular,2024-01-21,true
-34,luis.flores109@gmail.com,Luis,Flores,Luis Flores,+51 936627273,Av. Los Libertadores 835,Lima,Perú,Perú,regular,2023-10-31,true
-35,jorge.morales682@gmail.com,Jorge,Morales,Jorge Morales,+51 998159161,Av. Los Libertadores 925,Tarma,Perú,Perú,regular,2023-08-18,true
-36,ana.torres944@gmail.com,Ana,Torres,Ana Torres,+51 961319116,Av. Los Libertadores 950,Cerro de Pasco,Pasco,Perú,regular,2023-11-29,true
-37,valeria.quispe620@gmail.com,Valeria,Quispe,Valeria Quispe,+51 943693500,Av. Los Libertadores 204,Huancayo,Perú,Perú,premium,2023-09-10,true
-38,pedro.huamán426@gmail.com,Pedro,Huamán,Pedro Huamán,+51 980938520,Av. Los Libertadores 608,Cerro de Pasco,Pasco,Perú,regular,2023-11-21,true
-39,miguel.torres339@gmail.com,Miguel,Torres,Miguel Torres,+51 913918387,Av. Los Libertadores 555,Huánuco,Perú,Perú,regular,2023-06-04,true
-40,juan.morales175@gmail.com,Juan,Morales,Juan Morales,+51 972670493,Av. Los Libertadores 717,Trujillo,Perú,Perú,regular,2024-04-02,true
-41,ana.castillo587@gmail.com,Ana,Castillo,Ana Castillo,+51 974414200,Av. Los Libertadores 563,Huánuco,Perú,Perú,vip,2023-09-23,true
-42,miguel.morales923@gmail.com,Miguel,Morales,Miguel Morales,+51 973544977,Av. Los Libertadores 453,Tarma,Perú,Perú,premium,2023-12-11,true
-43,maría.mamani500@gmail.com,María,Mamani,María Mamani,+51 953552507,Av. Los Libertadores 266,Trujillo,Perú,Perú,regular,2023-09-14,true
-44,david.vargas675@gmail.com,David,Vargas,David Vargas,+51 979400729,Av. Los Libertadores 885,Trujillo,Perú,Perú,regular,2024-01-30,true
-45,luis.mendoza530@gmail.com,Luis,Mendoza,Luis Mendoza,+51 933413520,Av. Los Libertadores 809,Lima,Perú,Perú,regular,2024-05-26,true
-46,carmen.torres922@gmail.com,Carmen,Torres,Carmen Torres,+51 945693301,Av. Los Libertadores 861,Yanahuanca,Pasco,Perú,premium,2024-02-08,true
-47,claudia.vargas89@gmail.com,Claudia,Vargas,Claudia Vargas,+51 951917067,Av. Los Libertadores 138,Lima,Perú,Perú,premium,2024-01-29,true
-48,patricia.torres486@gmail.com,Patricia,Torres,Patricia Torres,+51 977728965,Av. Los Libertadores 331,Tarma,Perú,Perú,regular,2024-05-10,true
-49,carmen.sánchez90@gmail.com,Carmen,Sánchez,Carmen Sánchez,+51 967341544,Av. Los Libertadores 115,Cerro de Pasco,Pasco,Perú,regular,2023-09-22,true
-50,maría.quispe13@gmail.com,María,Quispe,María Quispe,+51 914294700,Av. Los Libertadores 616,Huancayo,Perú,Perú,regular,2023-06-21,true
+customer_key,user_id,email,first_name,last_name,full_name,phone,address,city,state,postal_code,country,birth_date,gender,customer_type,registration_date,last_login_date,total_orders,total_spent,is_active,created_at,updated_at
+1,,juan.paredes692@gmail.com,Juan,Paredes,Juan Paredes,+51 934170734,Av. Los Libertadores 825,Tarma,Perú,,Perú,,,regular,2023-09-14,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+2,,fernando.torres212@gmail.com,Fernando,Torres,Fernando Torres,+51 917278165,Av. Los Libertadores 887,Arequipa,Perú,,Perú,,,regular,2023-07-28,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+3,,miguel.huamán871@gmail.com,Miguel,Huamán,Miguel Huamán,+51 985190133,Av. Los Libertadores 231,Tarma,Perú,,Perú,,,premium,2023-12-24,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+4,,ana.huamán542@gmail.com,Ana,Huamán,Ana Huamán,+51 944064942,Av. Los Libertadores 675,Arequipa,Perú,,Perú,,,regular,2023-07-12,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+5,,david.díaz639@gmail.com,David,Díaz,David Díaz,+51 961260969,Av. Los Libertadores 272,Huánuco,Perú,,Perú,,,regular,2023-09-02,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+6,,carmen.garcía199@gmail.com,Carmen,García,Carmen García,+51 952479280,Av. Los Libertadores 454,Huánuco,Perú,,Perú,,,premium,2024-01-11,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+7,,lucía.flores229@gmail.com,Lucía,Flores,Lucía Flores,+51 936214918,Av. Los Libertadores 226,Tarma,Perú,,Perú,,,regular,2024-05-21,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+8,,claudia.espinoza970@gmail.com,Claudia,Espinoza,Claudia Espinoza,+51 942366935,Av. Los Libertadores 905,Arequipa,Perú,,Perú,,,regular,2023-09-25,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+9,,carmen.mamani993@gmail.com,Carmen,Mamani,Carmen Mamani,+51 915394938,Av. Los Libertadores 586,Lima,Perú,,Perú,,,regular,2023-08-04,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+10,,luis.morales756@gmail.com,Luis,Morales,Luis Morales,+51 939183571,Av. Los Libertadores 599,Huánuco,Perú,,Perú,,,premium,2023-10-15,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+11,,pedro.paredes174@gmail.com,Pedro,Paredes,Pedro Paredes,+51 969421072,Av. Los Libertadores 494,Yanahuanca,Pasco,,Perú,,,regular,2023-09-14,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+12,,david.rodríguez244@gmail.com,David,Rodríguez,David Rodríguez,+51 956694736,Av. Los Libertadores 701,Cerro de Pasco,Pasco,,Perú,,,regular,2023-08-30,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+13,,maría.castro548@gmail.com,María,Castro,María Castro,+51 953301089,Av. Los Libertadores 498,Trujillo,Perú,,Perú,,,regular,2024-05-17,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+14,,lucía.huamán860@gmail.com,Lucía,Huamán,Lucía Huamán,+51 996330942,Av. Los Libertadores 874,Yanahuanca,Pasco,,Perú,,,regular,2024-03-03,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+15,,david.díaz926@gmail.com,David,Díaz,David Díaz,+51 911954315,Av. Los Libertadores 994,Huancayo,Perú,,Perú,,,premium,2024-01-31,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+16,,miguel.vargas392@gmail.com,Miguel,Vargas,Miguel Vargas,+51 974098190,Av. Los Libertadores 637,Cerro de Pasco,Pasco,,Perú,,,regular,2024-01-29,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+17,,david.paredes568@gmail.com,David,Paredes,David Paredes,+51 954549308,Av. Los Libertadores 632,Yanahuanca,Pasco,,Perú,,,regular,2023-06-27,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+18,,carlos.castro903@gmail.com,Carlos,Castro,Carlos Castro,+51 976138680,Av. Los Libertadores 870,Trujillo,Perú,,Perú,,,premium,2024-05-19,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+19,,lucía.mamani926@gmail.com,Lucía,Mamani,Lucía Mamani,+51 983231597,Av. Los Libertadores 126,Cerro de Pasco,Pasco,,Perú,,,premium,2023-06-05,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+20,,patricia.garcía531@gmail.com,Patricia,García,Patricia García,+51 975778735,Av. Los Libertadores 112,Arequipa,Perú,,Perú,,,regular,2024-01-10,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+21,,carmen.castillo698@gmail.com,Carmen,Castillo,Carmen Castillo,+51 988061243,Av. Los Libertadores 400,Tarma,Perú,,Perú,,,vip,2024-05-13,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+22,,lucía.rodríguez621@gmail.com,Lucía,Rodríguez,Lucía Rodríguez,+51 936702162,Av. Los Libertadores 588,Yanahuanca,Pasco,,Perú,,,regular,2023-06-30,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+23,,carmen.gutiérrez583@gmail.com,Carmen,Gutiérrez,Carmen Gutiérrez,+51 967875773,Av. Los Libertadores 764,Lima,Perú,,Perú,,,regular,2024-02-12,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+24,,jorge.chávez905@gmail.com,Jorge,Chávez,Jorge Chávez,+51 974302161,Av. Los Libertadores 450,Trujillo,Perú,,Perú,,,regular,2023-10-20,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+25,,pedro.flores652@gmail.com,Pedro,Flores,Pedro Flores,+51 921923350,Av. Los Libertadores 213,Arequipa,Perú,,Perú,,,regular,2024-04-26,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+26,,miguel.flores110@gmail.com,Miguel,Flores,Miguel Flores,+51 955629450,Av. Los Libertadores 417,Arequipa,Perú,,Perú,,,regular,2024-01-04,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+27,,luis.chávez578@gmail.com,Luis,Chávez,Luis Chávez,+51 956640846,Av. Los Libertadores 304,Arequipa,Perú,,Perú,,,regular,2024-01-15,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+28,,patricia.díaz125@gmail.com,Patricia,Díaz,Patricia Díaz,+51 925281851,Av. Los Libertadores 276,Trujillo,Perú,,Perú,,,vip,2023-10-23,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+29,,rosa.castillo398@gmail.com,Rosa,Castillo,Rosa Castillo,+51 984032343,Av. Los Libertadores 625,Huancayo,Perú,,Perú,,,premium,2023-10-03,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+30,,diego.romero359@gmail.com,Diego,Romero,Diego Romero,+51 931198744,Av. Los Libertadores 575,Huancayo,Perú,,Perú,,,premium,2023-09-05,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+31,,ana.paredes336@gmail.com,Ana,Paredes,Ana Paredes,+51 956370754,Av. Los Libertadores 777,Lima,Perú,,Perú,,,regular,2023-09-11,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+32,,carmen.mamani656@gmail.com,Carmen,Mamani,Carmen Mamani,+51 913602600,Av. Los Libertadores 768,Huancayo,Perú,,Perú,,,premium,2023-10-02,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+33,,carlos.vargas671@gmail.com,Carlos,Vargas,Carlos Vargas,+51 999016472,Av. Los Libertadores 146,Lima,Perú,,Perú,,,regular,2023-06-14,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+34,,patricia.gutiérrez615@gmail.com,Patricia,Gutiérrez,Patricia Gutiérrez,+51 910142945,Av. Los Libertadores 476,Huancayo,Perú,,Perú,,,regular,2024-05-23,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+35,,josé.gutiérrez477@gmail.com,José,Gutiérrez,José Gutiérrez,+51 914779136,Av. Los Libertadores 614,Tarma,Perú,,Perú,,,regular,2023-08-16,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+36,,elena.paredes298@gmail.com,Elena,Paredes,Elena Paredes,+51 960267088,Av. Los Libertadores 461,Huánuco,Perú,,Perú,,,regular,2024-03-29,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+37,,claudia.sánchez244@gmail.com,Claudia,Sánchez,Claudia Sánchez,+51 981753817,Av. Los Libertadores 531,Cerro de Pasco,Pasco,,Perú,,,regular,2024-01-05,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+38,,juan.díaz913@gmail.com,Juan,Díaz,Juan Díaz,+51 976919653,Av. Los Libertadores 493,Lima,Perú,,Perú,,,regular,2023-10-23,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+39,,diego.sánchez664@gmail.com,Diego,Sánchez,Diego Sánchez,+51 986064393,Av. Los Libertadores 723,Tarma,Perú,,Perú,,,regular,2024-03-13,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+40,,pedro.huamán88@gmail.com,Pedro,Huamán,Pedro Huamán,+51 968513626,Av. Los Libertadores 238,Huancayo,Perú,,Perú,,,regular,2023-08-03,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+41,,fernando.chávez66@gmail.com,Fernando,Chávez,Fernando Chávez,+51 991161447,Av. Los Libertadores 111,Lima,Perú,,Perú,,,premium,2023-08-26,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+42,,carmen.sánchez279@gmail.com,Carmen,Sánchez,Carmen Sánchez,+51 952334682,Av. Los Libertadores 309,Cerro de Pasco,Pasco,,Perú,,,regular,2023-10-10,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+43,,elena.castillo301@gmail.com,Elena,Castillo,Elena Castillo,+51 913414386,Av. Los Libertadores 566,Cerro de Pasco,Pasco,,Perú,,,premium,2023-08-28,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+44,,patricia.mendoza549@gmail.com,Patricia,Mendoza,Patricia Mendoza,+51 980338378,Av. Los Libertadores 943,Tarma,Perú,,Perú,,,regular,2023-10-31,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+45,,sofía.mendoza792@gmail.com,Sofía,Mendoza,Sofía Mendoza,+51 963614578,Av. Los Libertadores 701,Cerro de Pasco,Pasco,,Perú,,,regular,2024-04-14,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+46,,patricia.morales617@gmail.com,Patricia,Morales,Patricia Morales,+51 949702163,Av. Los Libertadores 729,Huancayo,Perú,,Perú,,,regular,2023-10-04,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+47,,david.quispe91@gmail.com,David,Quispe,David Quispe,+51 947676511,Av. Los Libertadores 886,Huánuco,Perú,,Perú,,,regular,2024-04-14,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+48,,patricia.mendoza625@gmail.com,Patricia,Mendoza,Patricia Mendoza,+51 919240864,Av. Los Libertadores 428,Yanahuanca,Pasco,,Perú,,,regular,2023-08-26,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+49,,diego.gutiérrez370@gmail.com,Diego,Gutiérrez,Diego Gutiérrez,+51 959712540,Av. Los Libertadores 822,Lima,Perú,,Perú,,,regular,2023-12-09,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00
+50,,miguel.mendoza638@gmail.com,Miguel,Mendoza,Miguel Mendoza,+51 970154119,Av. Los Libertadores 172,Arequipa,Perú,,Perú,,,regular,2024-05-04,,0,0.0,True,2026-10-11T03:11:04.985922+00:00,2026-10-11T03:11:04.985922+00:00

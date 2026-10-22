@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { TrendingUp, Package, Users, DollarSign, RefreshCw, BarChart3, Sparkles, ShoppingBag, AlertTriangle } from 'lucide-react';
+import { TrendingUp, Package, Users, DollarSign, RefreshCw, BarChart3, Sparkles, ShoppingBag, AlertTriangle, Radio, Clock3 } from 'lucide-react';
 import { Button, toast, Pagination } from '@/components/ui';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { getDashboardMetrics, getSalesChartData, getTopProducts } from '@/lib/adminQueries';
+import { getDashboardMetrics, getSalesChartData, getTopProducts, subscribeToDashboardChanges } from '@/lib/adminQueries';
 import { supabase } from '@/lib/customSupabaseClient';
 
 const Dashboard = () => {
@@ -26,6 +26,9 @@ const Dashboard = () => {
   const [topProducts, setTopProducts] = useState([]);
   const [mlInsights, setMlInsights] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [realtimeStatus, setRealtimeStatus] = useState('CONNECTING');
+  const [lastSyncAt, setLastSyncAt] = useState(null);
+  const refreshTimerRef = useRef(null);
 
   // Lista de pronósticos por producto obtenidos del modelo de ML
   const forecastList = Object.entries(mlInsights?.pronostico_demanda_30_dias || {}).map(([name, data]) => ({
@@ -44,9 +47,47 @@ const Dashboard = () => {
   const totalVIP = segResumen['Cliente VIP / Champion'] || 0;
   const totalRiesgo = segResumen['En Riesgo de Abandono (Churn)'] || 0;
   const totalLeales = segResumen['Cliente Leal / Frecuente'] || 0;
+  const modelDrivers = (mlInsights?.explicabilidad_modelo?.variables_principales || []).slice(0, 5);
+  const modelMetrics = mlInsights?.metricas_modelo_ml || {};
+  const hasModelMetrics = ['mae', 'rmse', 'r2'].every((metric) => Number.isFinite(Number(modelMetrics[metric])));
+  const algorithmComparison = mlInsights?.algoritmos_comparacion || [];
+  const selectedAlgorithm = mlInsights?.algoritmo_seleccionado || modelMetrics?.algorithm || 'Pendiente de seleccionar';
   useEffect(() => {
-    loadDashboardData();
+    loadDashboardData({ notify: true });
     loadMlInsights();
+
+    const scheduleRealtimeRefresh = () => {
+      setRealtimeStatus('UPDATING');
+      window.clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = window.setTimeout(async () => {
+        await loadDashboardData({ showLoading: false });
+        await loadMlInsights();
+        setRealtimeStatus('SUBSCRIBED');
+      }, 350);
+    };
+
+    const dashboardChannel = subscribeToDashboardChanges(
+      scheduleRealtimeRefresh,
+      (status) => {
+        if (status === 'SUBSCRIBED') setRealtimeStatus('SUBSCRIBED');
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          setRealtimeStatus('POLLING');
+        }
+      }
+    );
+
+    // Fallback para instalaciones donde Realtime aún no fue habilitado en la
+    // publicación de PostgreSQL. La UI sigue sincronizada sin intervención.
+    const fallbackRefresh = window.setInterval(() => {
+      loadDashboardData({ showLoading: false });
+      loadMlInsights();
+    }, 60000);
+
+    return () => {
+      window.clearTimeout(refreshTimerRef.current);
+      window.clearInterval(fallbackRefresh);
+      supabase.removeChannel(dashboardChannel);
+    };
   }, []);
 
   const loadMlInsights = async () => {
@@ -63,8 +104,8 @@ const Dashboard = () => {
     }
   };
 
-  const loadDashboardData = async () => {
-    setLoading(true);
+  const loadDashboardData = async ({ showLoading = true, notify = false } = {}) => {
+    if (showLoading) setLoading(true);
     setDataError('');
     try {
       const [metricsResult, chartResult, topProductsResult] = await Promise.all([
@@ -91,31 +132,37 @@ const Dashboard = () => {
       });
       setSalesChartData(chartResult.data || []);
       setTopProducts(topProductsResult.data || []);
+      setLastSyncAt(new Date());
 
-      toast({
-        title: "Datos actualizados",
-        description: `KPIs sincronizados desde ${metricsResult.source || 'el data warehouse'}.`
-      });
+      if (notify) {
+        toast({
+          title: "Datos actualizados",
+          description: `KPIs sincronizados desde ${metricsResult.source || 'el data warehouse'}.`
+        });
+      }
     } catch (error) {
       console.error('Error loading dashboard data:', error);
       setDataError('No se pudieron leer los datos reales del data warehouse. Verifica el acceso a fact_sales, dim_customers y dim_products.');
-      setDashboardMetrics({
-        totalSales: 0,
-        totalOrders: 0,
-        totalProducts: 0,
-        totalCustomers: 0,
-        lowStockProducts: null,
-        averageOrderValue: 0,
-        totalQuantitySold: 0,
-        totalProfit: 0,
-        totalDiscounts: 0,
-        inventorySource: '',
-        source: ''
-      });
-      setSalesChartData([]);
-      setTopProducts([]);
+      // En una actualización de fondo conservamos los últimos datos válidos.
+      if (showLoading) {
+        setDashboardMetrics({
+          totalSales: 0,
+          totalOrders: 0,
+          totalProducts: 0,
+          totalCustomers: 0,
+          lowStockProducts: null,
+          averageOrderValue: 0,
+          totalQuantitySold: 0,
+          totalProfit: 0,
+          totalDiscounts: 0,
+          inventorySource: '',
+          source: ''
+        });
+        setSalesChartData([]);
+        setTopProducts([]);
+      }
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
 
@@ -137,15 +184,19 @@ const Dashboard = () => {
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
-            <span className="bg-purple-100 text-purple-800 text-xs font-semibold px-2.5 py-0.5 rounded-full flex items-center gap-1 border border-purple-200">
-              <Sparkles className="w-3 h-3 text-purple-600" /> ML Sincronizado
+            <span className={`${mlInsights ? 'bg-purple-100 text-purple-800 border-purple-200' : 'bg-gray-100 text-gray-600 border-gray-200'} text-xs font-semibold px-2.5 py-0.5 rounded-full flex items-center gap-1 border`}>
+              <Sparkles className={`w-3 h-3 ${mlInsights ? 'text-purple-600' : 'text-gray-500'}`} />
+              {mlInsights ? 'ML Sincronizado' : 'ML cargando'}
             </span>
           </div>
           <p className="text-gray-600 mt-1">Resumen general y pronósticos de Machine Learning · {mlInsights?.kpis_generales?.periodo_analizado}</p>
           <p className="text-xs text-gray-500 mt-1">Fuente de KPIs: {dashboardMetrics.source || 'fact_sales + dim_customers + dim_products'}</p>
         </div>
         <Button
-          onClick={loadDashboardData}
+          onClick={async () => {
+            await loadDashboardData({ notify: true });
+            await loadMlInsights();
+          }}
           variant="outline"
           disabled={loading}
         >
@@ -154,11 +205,119 @@ const Dashboard = () => {
         </Button>
       </div>
 
+      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-semibold ${
+          realtimeStatus === 'SUBSCRIBED'
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+            : realtimeStatus === 'UPDATING'
+              ? 'border-blue-200 bg-blue-50 text-blue-700'
+              : 'border-amber-200 bg-amber-50 text-amber-700'
+        }`}>
+          <Radio className={`h-3.5 w-3.5 ${realtimeStatus === 'UPDATING' ? 'animate-pulse' : ''}`} />
+          {realtimeStatus === 'SUBSCRIBED' ? 'Tiempo real conectado' : realtimeStatus === 'UPDATING' ? 'Sincronizando venta…' : 'Sincronización automática'}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Clock3 className="h-3.5 w-3.5" />
+          Última actualización: {lastSyncAt ? lastSyncAt.toLocaleTimeString('es-PE') : '—'}
+        </span>
+        <span>Escucha fact_sales, pedidos y productos · respaldo cada 60 s</span>
+      </div>
+
       {dataError && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {dataError}
         </div>
       )}
+
+      {/* Métricas de calidad del modelo ML */}
+      <motion.section
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="rounded-xl border border-purple-100 bg-gradient-to-br from-purple-50 via-white to-indigo-50 p-5 shadow-sm"
+      >
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Métricas del modelo de Machine Learning</h3>
+            <p className="text-xs text-gray-500 mt-1">
+              {selectedAlgorithm} · validación temporal 80/20 · valores obtenidos del último entrenamiento
+            </p>
+          </div>
+          <span className={`text-xs font-semibold ${hasModelMetrics ? 'text-emerald-700' : 'text-amber-700'}`}>
+            {hasModelMetrics ? '✓ Métricas disponibles' : 'Pendiente de entrenar'}
+          </span>
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {[
+            { label: 'MAE', value: modelMetrics.mae, description: 'Error absoluto medio (uds.)', color: 'text-purple-700' },
+            { label: 'RMSE', value: modelMetrics.rmse, description: 'Error cuadrático medio (uds.)', color: 'text-indigo-700' },
+            { label: 'R²', value: modelMetrics.r2, description: 'Capacidad explicativa', color: 'text-blue-700' },
+          ].map((metric) => (
+            <div key={metric.label} className="rounded-lg border border-white bg-white/80 px-4 py-3 shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wide text-gray-500">{metric.label}</span>
+                <span className={`text-2xl font-bold ${metric.color}`}>
+                  {Number.isFinite(Number(metric.value)) ? Number(metric.value).toFixed(3) : '—'}
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] text-gray-500">{metric.description}</p>
+            </div>
+          ))}
+        </div>
+      </motion.section>
+
+      {/* Comparación reproducible de los cinco algoritmos de pronóstico */}
+      <motion.section
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="rounded-xl border border-sky-100 bg-white p-5 shadow-sm"
+      >
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Comparación de 5 algoritmos</h3>
+            <p className="mt-1 max-w-3xl text-xs text-gray-500">
+              Todos se entrenaron con las mismas variables y la misma validación temporal 80/20. Se elige automáticamente el menor MAE; en caso de empate, el menor RMSE.
+            </p>
+          </div>
+          <span className="mt-1 inline-flex items-center rounded-full bg-sky-50 px-3 py-1 text-xs font-bold text-sky-700">
+            Seleccionado: {selectedAlgorithm}
+          </span>
+        </div>
+
+        {algorithmComparison.length === 0 ? (
+          <p className="mt-4 rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm text-amber-800">
+            La comparación estará disponible después de ejecutar el pipeline de ML actualizado.
+          </p>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[780px] text-sm">
+              <thead className="border-b border-gray-100 bg-gray-50/80 text-left text-[11px] uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th className="px-3 py-3">Algoritmo</th>
+                  <th className="px-3 py-3 text-right">MAE ↓</th>
+                  <th className="px-3 py-3 text-right">RMSE ↓</th>
+                  <th className="px-3 py-3 text-right">R² ↑</th>
+                  <th className="px-3 py-3">Por qué se usa</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {algorithmComparison.map((algorithm) => (
+                  <tr key={algorithm.key || algorithm.name} className={algorithm.selected ? 'bg-emerald-50/70' : ''}>
+                    <td className="px-3 py-3 align-top">
+                      <div className="font-semibold text-gray-900">{algorithm.name}</div>
+                      <div className="text-[11px] text-gray-500">{algorithm.family}</div>
+                      {algorithm.selected && <span className="mt-1 inline-block rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">MEJOR RESULTADO</span>}
+                    </td>
+                    <td className="px-3 py-3 text-right font-semibold text-purple-700">{Number.isFinite(Number(algorithm.mae)) ? Number(algorithm.mae).toFixed(3) : '—'}</td>
+                    <td className="px-3 py-3 text-right font-semibold text-indigo-700">{Number.isFinite(Number(algorithm.rmse)) ? Number(algorithm.rmse).toFixed(3) : '—'}</td>
+                    <td className="px-3 py-3 text-right font-semibold text-blue-700">{Number.isFinite(Number(algorithm.r2)) ? Number(algorithm.r2).toFixed(3) : '—'}</td>
+                    <td className="max-w-md px-3 py-3 text-xs leading-5 text-gray-600">{algorithm.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </motion.section>
 
       {/* Métricas principales */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
@@ -362,6 +521,43 @@ const Dashboard = () => {
         ))}
       </div>
 
+      {/* Explicabilidad global del modelo */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white rounded-xl shadow-sm border p-5"
+      >
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">¿Qué variables influyen en el pronóstico?</h3>
+            <p className="text-xs text-gray-500 mt-1">
+              Importancia global del algoritmo seleccionado; indica utilidad predictiva, no causalidad.
+            </p>
+          </div>
+          <BarChart3 className="w-5 h-5 text-purple-500 shrink-0" />
+        </div>
+        {modelDrivers.length === 0 ? (
+          <p className="text-sm text-gray-500">La explicabilidad estará disponible después de volver a entrenar el modelo.</p>
+        ) : (
+          <div className="space-y-3">
+            {modelDrivers.map((driver) => (
+              <div key={driver.feature}>
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className="font-medium text-gray-700">{driver.label || driver.feature}</span>
+                  <span className="font-semibold text-purple-700">{driver.importance_pct}%</span>
+                </div>
+                <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-purple-500 to-indigo-500"
+                    style={{ width: `${Math.min(Number(driver.importance_pct || 0), 100)}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </motion.div>
+
       {/* Lista de Pronósticos de Demanda por Producto (con Paginación de 10) */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -373,11 +569,11 @@ const Dashboard = () => {
             <div className="flex items-center gap-2">
               <h3 className="text-lg font-semibold text-gray-900">Pronóstico de Demanda y Ventas (Machine Learning)</h3>
               <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                Random Forest
+                {selectedAlgorithm}
               </span>
             </div>
             <p className="text-xs text-gray-500 mt-0.5">
-              Predicciones calculadas por el modelo para reposición y compras (MAE: {mlInsights?.metricas_modelo_ml?.mae || 0.58} uds). No reemplazan los KPIs reales.
+              Predicciones calculadas por {selectedAlgorithm} para reposición y compras (MAE: {mlInsights?.metricas_modelo_ml?.mae ?? '—'} uds). No reemplazan los KPIs reales.
             </p>
           </div>
           <div className="text-xs text-gray-500 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
@@ -399,7 +595,13 @@ const Dashboard = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {paginatedForecasts.map((prod) => (
+              {paginatedForecasts.length === 0 ? (
+                <tr>
+                  <td colSpan="7" className="px-6 py-8 text-center text-sm text-gray-500">
+                    No hay pronósticos disponibles. Ejecuta el pipeline de ML y vuelve a desplegar los insights.
+                  </td>
+                </tr>
+              ) : paginatedForecasts.map((prod) => (
                 <tr key={prod.name} className="hover:bg-blue-50/20 transition-colors">
                   <td className="px-6 py-3.5 font-medium text-gray-900">
                     {prod.name}

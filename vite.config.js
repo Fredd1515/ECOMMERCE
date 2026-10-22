@@ -53,8 +53,11 @@ const localGroqProxy = {
           body: JSON.stringify({
             model: body.model || 'openai/gpt-oss-120b',
             messages: body.messages || [],
-            max_tokens: body.max_tokens || 650,
+            ...(body.max_completion_tokens
+              ? { max_completion_tokens: body.max_completion_tokens }
+              : { max_tokens: body.max_tokens || 650 }),
             stream: Boolean(body.stream),
+            ...(body.reasoning_effort ? { reasoning_effort: body.reasoning_effort } : {}),
           }),
         });
 
