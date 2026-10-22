@@ -149,6 +149,42 @@ export const subscribeToOrders = (callback) => {
 };
 
 /**
+ * Escucha los cambios que pueden modificar los KPIs del dashboard.
+ * fact_sales es la fuente de ventas confirmadas; orders/products cubren el
+ * flujo operativo mientras la venta se replica al data warehouse.
+ */
+export const subscribeToDashboardChanges = (callback, onStatusChange) => {
+  return supabase
+    .channel(`dashboard_changes_${Date.now()}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'fact_sales' },
+      (payload) => callback(payload, 'fact_sales')
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'orders' },
+      (payload) => callback(payload, 'orders')
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'products' },
+      (payload) => callback(payload, 'products')
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'fact_inventory' },
+      (payload) => callback(payload, 'fact_inventory')
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'ml_insights' },
+      (payload) => callback(payload, 'ml_insights')
+    )
+    .subscribe((status) => onStatusChange?.(status));
+};
+
+/**
  * Suscribirse a cambios en productos
  */
 export const subscribeToProducts = (callback) => {

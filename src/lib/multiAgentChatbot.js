@@ -1,5 +1,5 @@
 // =============================================================================
-// SISTEMA DE CHATBOT MULTIAGENTE (FARMACIA + MACHINE LEARNING)
+// SISTEMA DE CHATBOT MULTIAGENTE (FARMACIA + ML + OPERACIONES + FIDELIZACIÓN)
 // =============================================================================
 import { supabase } from './customSupabaseClient';
 import { generateGeminiAgentResponse } from './geminiClient';
@@ -43,6 +43,7 @@ const ADMIN_ONLY_QUERY_PATTERNS = [
   /\b(?:ganancia|ganancias|utilidad|utilidades|ingreso|ingresos|ventas|venta total|rentabilidad|margen|costos?|costes|facturación|facturacion|ticket promedio)\b/i,
   /\b(?:pronóstico|pronostico|predicción de demanda|prediccion de demanda|demanda futura|métricas?|metricas|kpi|mae|rmse|r²|random forest|k[- ]?means|rfm|churn|abandono)\b/i,
   /\b(?:clientes?|usuarios?|pacientes?|proveedores?|empleados?|vip|historial de compras?|pedidos?|órdenes?|ordenes|correo|email|teléfono|telefono|nombre completo|gasto acumulado)\b/i,
+  /\b(?:retención|retencion|fidelización|fidelizacion|lealtad|campaña|campanas|campañas|cliente inactivo|recompra|lifetime value|clv)\b/i,
 ];
 
 export const isAdminOnlyQuery = (userText = '') => ADMIN_ONLY_QUERY_PATTERNS.some(pattern => pattern.test(userText));
@@ -109,6 +110,7 @@ export const assertNoSelfMedication = (userText = '') => {
  * 1. CLASIFICADOR DE INTENCIONES (ROUTER / SUPERVISOR)
  * Determina si la pregunta debe ser atendida por:
  *  - 'ML_ANALYST': Agente de Machine Learning, Pronósticos y Métricas de Negocio
+ *  - 'CUSTOMER_SUCCESS': Agente de Fidelización, Retención y Éxito del Cliente
  *  - 'PHARMACY':   Agente FarmaBot (Catálogo, Síntomas, Precios, Farmacia)
  */
 export const routeUserQuery = (userText = '') => {
@@ -122,8 +124,23 @@ export const routeUserQuery = (userText = '') => {
     'mae', 'rmse', 'r2', 'r²', 'metricas', 'métricas', 'precision', 'precisión',
     'kpi', 'ingresos proyectados', 'futuro', 'reabastecer', 'analisis de ventas', 'análisis de ventas'
   ];
+  const customerSuccessKeywords = [
+    'retencion', 'retención', 'fidelizacion', 'fidelización', 'lealtad',
+    'campaña', 'campanas', 'campañas', 'recompra', 'cliente inactivo',
+    'clientes inactivos', 'lifetime value', 'clv', 'programa de beneficios'
+  ];
 
+  const isCustomerSuccess = customerSuccessKeywords.some(kw => text.includes(kw));
   const isML = mlKeywords.some(kw => text.includes(kw));
+
+  if (isCustomerSuccess) {
+    return {
+      agentType: 'CUSTOMER_SUCCESS',
+      agentName: 'LoyaltyBot (Éxito del Cliente)',
+      badge: '🤝 LoyaltyBot',
+      color: 'from-pink-600 to-rose-600',
+    };
+  }
 
   if (isML) {
     return {
@@ -161,6 +178,12 @@ const AGENT_DEFINITIONS = [
     badge: '📦 StockBot',
     role: 'Ventas, inventario y reposición',
   },
+  {
+    agentType: 'CUSTOMER_SUCCESS',
+    provider: 'OPENROUTER',
+    badge: '🤝 LoyaltyBot',
+    role: 'Fidelización, retención y campañas',
+  },
 ];
 
 const buildAgentRoles = (agentResults = []) => AGENT_DEFINITIONS.map(definition => {
@@ -194,8 +217,20 @@ El usuario actual no es administrador. Por seguridad no recibes métricas intern
 
   const kpis = insights.kpis_generales || {};
   const metrics = insights.metricas_modelo_ml || {};
+  const algorithmComparison = insights.algoritmos_comparacion || [];
+  const selectedAlgorithm = insights.algoritmo_seleccionado || metrics.algorithm || 'No disponible';
+  const explainability = insights.explicabilidad_modelo || {};
   const forecasts = insights.pronostico_demanda_30_dias || {};
   const rfm = insights.segmentacion_clientes || {};
+
+  const explainabilityLines = (explainability.variables_principales || [])
+    .slice(0, 6)
+    .map(variable => `• ${variable.label || variable.feature}: ${variable.importance_pct ?? 'N/D'}% de importancia relativa`)
+    .join('\n');
+
+  const algorithmLines = algorithmComparison
+    .map(algorithm => `• ${algorithm.name}: MAE ${algorithm.mae}, RMSE ${algorithm.rmse}, R² ${algorithm.r2}${algorithm.selected ? ' — seleccionado' : ''}`)
+    .join('\n');
 
   const forecastLines = Object.entries(forecasts)
     .map(([prodName, data]) => 
@@ -221,8 +256,17 @@ Tu especialidad es responder preguntas estratégicas basadas en el modelo de Mac
 - Total transacciones: ${kpis.total_ventas_historicas} ventas procesadas
 - Ingresos acumulados: S/ ${kpis.ingresos_totales_soles} (Ticket promedio: S/ ${kpis.ticket_promedio_soles})
 - Modelos entrenados:
-  1. RandomForestRegressor para Pronóstico de Demanda y Ventas (MAE: ${metrics.mae} uds, RMSE: ${metrics.rmse} uds, R²: ${metrics.r2}).
+  1. Cinco algoritmos comparados para Pronóstico de Demanda y Ventas; seleccionado: ${selectedAlgorithm} (MAE: ${metrics.mae} uds, RMSE: ${metrics.rmse} uds, R²: ${metrics.r2}).
   2. K-Means Clustering para Segmentación RFM (Recencia, Frecuencia, Monto).
+
+## COMPARACIÓN DE ALGORITMOS
+${algorithmLines || 'No disponible; no inventes métricas.'}
+
+## EXPLICABILIDAD DEL MODELO
+- Método: ${explainability.method || 'No disponible'}
+- Variables con mayor importancia predictiva:
+${explainabilityLines || 'No disponible; no inventes explicaciones.'}
+- ${explainability.warning || 'La importancia predictiva no demuestra causalidad.'}
 
 ## PRONÓSTICOS DE DEMANDA POR PRODUCTO (PRÓXIMOS 30 DÍAS):
 ${forecastLines}
@@ -243,8 +287,9 @@ ${vipList}
 2. NUNCA empieces explicando cómo funciona el modelo, qué variables usa o cómo interpretarlo. Eso NO se pidió.
 3. Si preguntan "métricas del modelo", responde SOLO: MAE, RMSE, R², algoritmo — nada más.
 4. Si preguntan pronósticos, da primero la tabla de números y luego (opcional) 1 recomendación corta.
-5. Formato: viñetas cortas. Máximo 6 líneas de respuesta salvo que se pida un reporte completo.
-6. Nunca uses la frase "para interpretar esto" o "esto significa que". Dame los datos, el usuario ya sabe leer.`;
+5. Si preguntan por qué una predicción cambia, menciona únicamente las variables importantes disponibles y aclara que son asociaciones predictivas, no causas comprobadas.
+6. Formato: viñetas cortas. Máximo 6 líneas de respuesta salvo que se pida un reporte completo.
+7. Nunca uses la frase "para interpretar esto" o "esto significa que". Dame los datos, el usuario ya sabe leer.`;
 };
 
 /**
@@ -360,16 +405,75 @@ ${businessContext}
 - Si la consulta es farmacéutica, deja la recomendación clínica a FarmaBot.`;
 };
 
+/**
+ * Prompt para el agente de éxito del cliente, fidelización y retención.
+ * Usa los resultados RFM del pipeline, pero convierte los segmentos en
+ * acciones comerciales sin mezclar este rol con el análisis predictivo puro.
+ */
+const buildCustomerSuccessSystemPrompt = (user = null, insights = {}) => {
+  const isAdmin = isAdminUser(user);
+
+  if (!isAdmin) {
+    return `Eres LoyaltyBot, el agente de éxito del cliente de Farmacia Digital.
+El usuario actual no es administrador. Por seguridad no recibes segmentación RFM, clientes VIP, clientes en riesgo, historial de compras ni métricas privadas.
+
+## REGLAS DE PRIVACIDAD
+- No inventes nombres, cantidades, compras, campañas ni datos de clientes.
+- Si preguntan por retención, fidelización, churn, clientes VIP o campañas internas, indica brevemente que esa información está disponible únicamente para administradores.
+- Puedes explicar conceptos generales de experiencia del cliente y fidelización sin usar datos reales de la farmacia.
+- Responde siempre en español peruano, con recomendaciones generales y concisas.`;
+  }
+
+  const rfm = insights.segmentacion_clientes || {};
+  const summary = rfm.resumen || {};
+  const churnList = (rfm.clientes_en_riesgo_abandono || [])
+    .slice(0, 10)
+    .map(customer => `• ${customer.customer_key || 'Cliente anonimizado'} — ${customer.recency ?? 'N/D'} días desde la última compra | ${customer.frequency ?? 'N/D'} compras | S/ ${customer.monetary ?? 'N/D'}`)
+    .join('\n');
+  const vipList = (rfm.clientes_vip || [])
+    .slice(0, 10)
+    .map(customer => `• ${customer.customer_key || 'Cliente anonimizado'} — ${customer.frequency ?? 'N/D'} compras | S/ ${customer.monetary ?? 'N/D'}`)
+    .join('\n');
+
+  return `Eres LoyaltyBot, el agente de éxito del cliente, fidelización y retención de Farmacia Digital.
+El usuario es administrador autorizado y puedes usar exclusivamente el informe RFM entregado abajo.
+
+## TU ROL
+- Prioriza acciones para reducir abandono, aumentar recompra y cuidar clientes VIP.
+- Traduce los segmentos RFM en campañas accionables, con objetivo, público, mensaje, canal y prioridad.
+- Distingue siempre entre datos observados y recomendaciones propuestas.
+- No afirmes que una campaña fue enviada ni que una acción se ejecutó.
+- No inventes descuentos, canales, resultados, nombres ni datos que no estén en el contexto.
+- No reemplaces a FarmaBot en consultas clínicas ni a StockBot en decisiones de inventario.
+
+## RESUMEN RFM REAL
+- Clientes leales/frecuentes: ${summary['Cliente Leal / Frecuente'] || 0}
+- Clientes en riesgo de abandono: ${summary['En Riesgo de Abandono (Churn)'] || 0}
+- Clientes VIP / Champions: ${summary['Cliente VIP / Champion'] || 0}
+
+## CLIENTES EN RIESGO
+${churnList || 'No hay clientes en riesgo disponibles.'}
+
+## CLIENTES VIP
+${vipList || 'No hay clientes VIP disponibles.'}
+
+## FORMATO DE RESPUESTA
+- Responde en español peruano con viñetas breves.
+- Para una campaña, entrega: segmento, objetivo, acción sugerida y prioridad.
+- Para una pregunta de clientes, usa primero los números y luego una recomendación de máximo dos líneas.
+- Protege los datos personales: muestra identificadores disponibles solo cuando sean necesarios para responder la pregunta administrativa.`;
+};
+
 const buildOrchestratorSystemPrompt = (userMessage, agentResults, user = null) => {
   const isAdmin = isAdminUser(user);
   const resultBlocks = agentResults.map(agent => {
     if (agent.status !== 'RESPONDIÓ') {
-      return `### ${agent.badge} (${agent.provider})\nEstado: ${agent.status}${agent.error ? ` — ${agent.error}` : ''}`;
+      return `### ${agent.badge}\nEstado: ${agent.status}${agent.error ? ` — ${agent.error}` : ''}`;
     }
-    return `### ${agent.badge} (${agent.provider})\n${agent.content}`;
+    return `### ${agent.badge}\n${agent.content}`;
   }).join('\n\n');
 
-  return `Eres el Orquestador principal de Farmacia Digital y funcionas con Gemini.
+  return `Eres el Orquestador principal de Farmacia Digital.
 Debes sintetizar una única respuesta útil en español peruano usando exclusivamente la pregunta y los informes de los agentes.
 
 ## PREGUNTA DEL USUARIO
@@ -379,7 +483,7 @@ ${userMessage}
 ${resultBlocks}
 
 ## REGLAS
-- Integra los datos sin repetir tres veces la misma información.
+- Integra los datos sin repetir la misma información entre agentes.
 - Prioriza la respuesta directa a la pregunta.
 - No inventes datos que no aparezcan en los informes.
 - Si un agente está en ERROR, indícalo brevemente solo cuando afecte la respuesta.
@@ -630,7 +734,7 @@ export const generateDeterministicResponse = (userText, routing, products = []) 
 /**
  * 5. EJECUCIÓN PRINCIPAL DEL CHATBOT MULTIAGENTE
  *
- * Los tres especialistas se ejecutan en paralelo. Gemini recibe sus informes
+ * Los cuatro especialistas se ejecutan en paralelo. Gemini recibe sus informes
  * y es el único responsable de producir la respuesta visible para el usuario.
  */
 export const executeMultiAgentChat = async ({
@@ -652,8 +756,8 @@ export const executeMultiAgentChat = async ({
 
   const routing = {
     agentType: 'ORCHESTRATOR',
-    agentName: 'Orquestador Gemini',
-    badge: '🧭 Orquestador Gemini',
+    agentName: 'Orquestador',
+    badge: '🧭 Orquestador',
     color: 'from-indigo-600 to-purple-600',
   };
 
@@ -676,6 +780,12 @@ export const executeMultiAgentChat = async ({
   };
 
   const adminInsights = isAdmin ? (await loadAdminMlInsights() || {}) : {};
+  const compactAgentHistory = history
+    .slice(-4)
+    .map(message => ({
+      ...message,
+      content: String(message.content || '').slice(-1800),
+    }));
 
   const agentSpecs = [
     {
@@ -691,9 +801,10 @@ export const executeMultiAgentChat = async ({
       ...AGENT_DEFINITIONS[1],
       run: () => generateGroqAgentResponse({
         systemPrompt: buildMLSystemPrompt(user, adminInsights),
-        history,
+        history: compactAgentHistory,
         userMessage,
-        maxTokens: 1000,
+        maxCompletionTokens: 1800,
+        requestOptions: { reasoning_effort: 'low' },
       }),
     },
     {
@@ -703,6 +814,15 @@ export const executeMultiAgentChat = async ({
         history,
         userMessage,
         maxTokens: 1400,
+      }),
+    },
+    {
+      ...AGENT_DEFINITIONS[3],
+      run: () => generateOpenRouterAgentResponse({
+        systemPrompt: buildCustomerSuccessSystemPrompt(user, adminInsights),
+        history,
+        userMessage,
+        maxTokens: 1200,
       }),
     },
   ];
@@ -717,7 +837,8 @@ export const executeMultiAgentChat = async ({
       updateStatus(agent.agentType, { status: 'RESPONDIÓ', active: true, content, error: null });
       return { ...agent, status: 'RESPONDIÓ', content, error: null };
     } catch (error) {
-      const message = error?.message || `No se pudo consultar ${agent.provider}.`;
+      console.warn(`Error interno del agente ${agent.agentType}:`, error);
+      const message = 'No se pudo consultar este agente en este momento.';
       updateStatus(agent.agentType, { status: 'ERROR', active: false, content: '', error: message });
       throw error;
     }
@@ -731,7 +852,7 @@ export const executeMultiAgentChat = async ({
       ...agent,
       status: 'ERROR',
       content: '',
-      error: settled.reason?.message || `No se pudo consultar ${agent.provider}.`,
+      error: 'No se pudo consultar este agente en este momento.',
     };
   });
 
@@ -748,7 +869,8 @@ export const executeMultiAgentChat = async ({
       maxOutputTokens: 1800,
     });
   } catch (error) {
-    const synthesisError = new Error(error?.message || 'Gemini no pudo sintetizar la respuesta multiagente.');
+    console.warn('Error interno del orquestador multiagente:', error);
+    const synthesisError = new Error('El orquestador no pudo sintetizar la respuesta multiagente.');
     synthesisError.code = 'ORCHESTRATOR_ERROR';
     synthesisError.agentRoles = agentRoles;
     throw synthesisError;
@@ -758,6 +880,6 @@ export const executeMultiAgentChat = async ({
     routing,
     agentRoles,
     content,
-    partial: agentResults.some(agent => agent.status !== 'RESPONDIÓ'),
+    partial: agentResults.some(agent => agent.status === 'ERROR'),
   };
 };

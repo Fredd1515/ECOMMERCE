@@ -58,12 +58,16 @@ export const generateGroqAgentResponse = async ({
   userMessage,
   onChunk = null,
   maxTokens = 650,
+  maxCompletionTokens = null,
+  requestOptions = {},
 }) => requestOpenAICompatibleChat({
   endpoint: GROQ_ENDPOINT,
   providerName: 'Groq',
   model: GROQ_MODEL,
   messages: buildChatMessages(systemPrompt, history, userMessage),
   maxTokens,
+  maxCompletionTokens,
+  requestOptions,
   onChunk,
 });
 

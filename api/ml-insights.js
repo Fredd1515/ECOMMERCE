@@ -2,7 +2,10 @@ import { createRequire } from 'node:module';
 import { createClient } from '@supabase/supabase-js';
 
 const require = createRequire(import.meta.url);
-const mlInsights = require('../src/data/ml_insights.json');
+// El frontend usa una copia pública sin PII. Los detalles de clientes se
+// leen únicamente desde el artefacto privado del backend después de validar
+// la sesión y el rol de administrador.
+const fallbackMlInsights = require('../ml_models/ml_insights.json');
 
 const sendJson = (res, statusCode, payload) => {
   res.statusCode = statusCode;
@@ -51,7 +54,20 @@ export default async function handler(req, res, runtimeEnv = {}) {
       return sendJson(res, 403, { error: { message: 'Solo los administradores pueden acceder a los datos analíticos.' } });
     }
 
-    return sendJson(res, 200, mlInsights);
+    // El automatizador persiste la última ejecución en Supabase. El artefacto
+    // local queda como fallback para no romper el dashboard si la migración
+    // aún no se ha instalado o la tabla está temporalmente indisponible.
+    const { data: storedInsights, error: storedInsightsError } = await supabase
+      .from('ml_insights')
+      .select('payload')
+      .eq('id', 'latest')
+      .maybeSingle();
+
+    if (!storedInsightsError && storedInsights?.payload) {
+      return sendJson(res, 200, storedInsights.payload);
+    }
+
+    return sendJson(res, 200, fallbackMlInsights);
   } catch (error) {
     console.error('ML insights admin endpoint error:', error);
     return sendJson(res, 500, { error: { message: 'No se pudieron cargar los datos analíticos.' } });
