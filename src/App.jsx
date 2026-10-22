@@ -21,6 +21,7 @@ import {
   getProfile, 
   getOrdersByUser, 
   getAllOrdersAdmin,
+  upsertProfile,
   updateProduct, 
   updateOrderStatus,
   createOrder,
@@ -66,9 +67,24 @@ function App() {
     if (savedCart) setCart(JSON.parse(savedCart));
 
     fetchProducts();
+
+    // El catálogo refleja inmediatamente el stock actualizado por una venta
+    // confirmada desde otra sesión administrativa.
+    const productsChannel = supabase
+      .channel(`catalog-products-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'products' },
+        () => fetchProducts()
+      )
+      .subscribe();
     
     // Scroll al inicio de la página al cargar
     window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    return () => {
+      supabase.removeChannel(productsChannel);
+    };
   }, []);
 
   useEffect(() => {
@@ -89,15 +105,52 @@ function App() {
   }, [profile?.role]);
 
   useEffect(() => {
+    if (!user) return undefined;
+
+    // El seguimiento del cliente y el panel administrativo reciben los
+    // cambios de estado sin tener que cerrar y volver a abrir la vista.
+    const ordersChannel = supabase
+      .channel(`user-orders-${user.id}-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders' },
+        () => fetchOrders()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'order_items' },
+        () => fetchOrders()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(ordersChannel);
+    };
+  }, [user?.id, profile?.role]);
+
+  useEffect(() => {
     localStorage.setItem('pharmacy_cart', JSON.stringify(cart));
   }, [cart]);
 
   const fetchProfile = async () => {
     if (!user) return;
-    const { data, error } = await getProfile(user.id);
+    let { data, error } = await getProfile(user.id);
     if (error) {
       console.error('Error fetching profile:', error);
     } else {
+      // Autenticar un usuario no crea automáticamente una fila en profiles
+      // en todas las instalaciones existentes. Reparamos ese caso al iniciar
+      // sesión para que el cliente aparezca en el panel sin intervención.
+      if (!data) {
+        const profileResult = await upsertProfile({
+          id: user.id,
+          email: user.email || '',
+          first_name: user.user_metadata?.first_name || '',
+          last_name: user.user_metadata?.last_name || ''
+        });
+        data = profileResult.data;
+        error = profileResult.error;
+      }
       setProfile(data);
     }
   };

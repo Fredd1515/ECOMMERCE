@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { TrendingUp, Download, RefreshCw, BarChart3 } from 'lucide-react';
+import { TrendingUp, Download, RefreshCw, BarChart3, CalendarDays } from 'lucide-react';
 import { Button, toast } from '@/components/ui';
 import {
   BarChart,
@@ -13,18 +13,58 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import {
-  getSalesByPeriod
+  getSalesByPeriod,
+  getDailySalesByPeriod
 } from '@/lib/adminQueries';
+import { supabase } from '@/lib/customSupabaseClient';
 
 const SalesAnalytics = () => {
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState('30d');
+  const [dailyRange, setDailyRange] = useState('7');
   const [salesData, setSalesData] = useState([]);
+  const [dailySales, setDailySales] = useState([]);
+  const [dailyLoading, setDailyLoading] = useState(true);
   const [dataSource, setDataSource] = useState('');
 
   useEffect(() => {
     loadSalesData();
-  }, [dateRange]);
+    loadDailySales();
+
+    // Refresca la vista cuando una confirmación de pago crea o actualiza
+    // registros en fact_sales, sin depender de recargar el navegador.
+    const channel = supabase
+      .channel(`sales-analytics-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'fact_sales' },
+        () => {
+          loadSalesData();
+          loadDailySales();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders' },
+        () => {
+          loadSalesData();
+          loadDailySales();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'order_items' },
+        () => {
+          loadSalesData();
+          loadDailySales();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [dateRange, dailyRange]);
 
   const loadSalesData = async () => {
     setLoading(true);
@@ -70,6 +110,32 @@ const SalesAnalytics = () => {
       setLoading(false);
     }
   };
+
+  const loadDailySales = async () => {
+    setDailyLoading(true);
+    try {
+      const { data, error, source } = await getDailySalesByPeriod(Number(dailyRange));
+      if (error) throw error;
+      setDailySales(data || []);
+      if (source) setDataSource(source);
+    } catch (error) {
+      console.error('Error loading daily sales:', error);
+      setDailySales([]);
+    } finally {
+      setDailyLoading(false);
+    }
+  };
+
+  const refreshSales = () => {
+    loadSalesData();
+    loadDailySales();
+  };
+
+  const dailyTotals = dailySales.reduce((totals, day) => ({
+    sales: totals.sales + Number(day.sales || 0),
+    orders: totals.orders + Number(day.orders || 0),
+    quantity: totals.quantity + Number(day.quantitySold || 0)
+  }), { sales: 0, orders: 0, quantity: 0 });
 
   const exportData = () => {
     if (salesData.length === 0) return;
@@ -117,8 +183,8 @@ const SalesAnalytics = () => {
           </select>
 
           <Button
-            onClick={loadSalesData}
-            disabled={loading}
+            onClick={refreshSales}
+            disabled={loading || dailyLoading}
             variant="outline"
             className="flex items-center gap-2"
           >
@@ -139,6 +205,73 @@ const SalesAnalytics = () => {
           )}
         </div>
       </div>
+
+      {/* Ventas del día y desglose por periodo */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white p-6 rounded-xl shadow-sm border"
+      >
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-5">
+          <div className="flex items-start gap-3">
+            <div className="rounded-xl bg-emerald-100 p-2 text-emerald-700">
+              <CalendarDays className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold">{dailyRange === '1' ? 'Ventas del día' : 'Ventas por día'}</h3>
+              <p className="text-sm text-gray-500 mt-1">Desglose actualizado de hoy y los últimos periodos.</p>
+            </div>
+          </div>
+          <select
+            value={dailyRange}
+            onChange={(event) => setDailyRange(event.target.value)}
+            className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500"
+            aria-label="Periodo de ventas diarias"
+          >
+            <option value="1">Hoy</option>
+            <option value="7">Últimos 7 días</option>
+            <option value="14">Últimos 14 días</option>
+            <option value="30">Últimos 30 días</option>
+            <option value="90">Últimos 90 días</option>
+          </select>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+          <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-4">
+            <p className="text-xs text-emerald-700 font-semibold uppercase">Ventas</p>
+            <p className="text-2xl font-bold text-emerald-800 mt-1">S/{dailyTotals.sales.toFixed(2)}</p>
+          </div>
+          <div className="rounded-xl bg-blue-50 border border-blue-100 p-4">
+            <p className="text-xs text-blue-700 font-semibold uppercase">Pedidos</p>
+            <p className="text-2xl font-bold text-blue-800 mt-1">{dailyTotals.orders}</p>
+          </div>
+          <div className="rounded-xl bg-purple-50 border border-purple-100 p-4">
+            <p className="text-xs text-purple-700 font-semibold uppercase">Unidades</p>
+            <p className="text-2xl font-bold text-purple-800 mt-1">{dailyTotals.quantity}</p>
+          </div>
+        </div>
+
+        {dailyLoading ? (
+          <div className="h-64 flex items-center justify-center text-gray-400">
+            <RefreshCw className="w-7 h-7 animate-spin" />
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={dailySales}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="label" />
+              <YAxis />
+              <Tooltip formatter={(value, name) => [
+                name === 'sales' ? `S/${Number(value).toFixed(2)}` : value,
+                name === 'sales' ? 'Ventas' : 'Pedidos'
+              ]} />
+              <Legend />
+              <Bar dataKey="sales" fill="#10B981" name="Ventas (S/)" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="orders" fill="#3B82F6" name="Pedidos" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </motion.div>
 
       {/* Chart */}
       <motion.div

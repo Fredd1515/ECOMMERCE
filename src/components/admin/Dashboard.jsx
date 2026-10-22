@@ -2,9 +2,17 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { TrendingUp, Package, Users, DollarSign, RefreshCw, BarChart3, Sparkles, ShoppingBag, AlertTriangle, Radio, Clock3 } from 'lucide-react';
 import { Button, toast, Pagination } from '@/components/ui';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from 'recharts';
 import { getDashboardMetrics, getSalesChartData, getTopProducts, subscribeToDashboardChanges } from '@/lib/adminQueries';
 import { supabase } from '@/lib/customSupabaseClient';
+
+const ALGORITHM_EXPLANATIONS = {
+  random_forest: 'Combina muchos árboles de decisión y promedia sus resultados. Captura relaciones no lineales y suele ser resistente a valores atípicos.',
+  gradient_boosting: 'Construye árboles de forma secuencial; cada árbol corrige errores del anterior. Puede detectar cambios sutiles de demanda, pero requiere un ajuste cuidadoso.',
+  extra_trees: 'Usa árboles muy aleatorizados para reducir la variabilidad del modelo. Es robusto y rápido, aunque puede perder precisión cuando el patrón es principalmente lineal.',
+  hist_gradient_boosting: 'Es una variante optimizada de Gradient Boosting que agrupa los valores en histogramas. Mantiene la capacidad no lineal y escala mejor con más datos.',
+  ridge: 'Es una regresión lineal con regularización. Es estable, interpretable y ayuda a controlar la multicolinealidad entre variables de calendario y retardos.'
+};
 
 const Dashboard = () => {
   const [loading, setLoading] = useState(true);
@@ -52,6 +60,19 @@ const Dashboard = () => {
   const hasModelMetrics = ['mae', 'rmse', 'r2'].every((metric) => Number.isFinite(Number(modelMetrics[metric])));
   const algorithmComparison = mlInsights?.algoritmos_comparacion || [];
   const selectedAlgorithm = mlInsights?.algoritmo_seleccionado || modelMetrics?.algorithm || 'Pendiente de seleccionar';
+  const algorithmChartData = algorithmComparison.map((algorithm) => ({
+    name: algorithm.name || algorithm.key,
+    mae: Number.isFinite(Number(algorithm.mae)) ? Number(algorithm.mae) : null,
+    rmse: Number.isFinite(Number(algorithm.rmse)) ? Number(algorithm.rmse) : null,
+    r2: Number.isFinite(Number(algorithm.r2)) ? Number(algorithm.r2) : null,
+    selected: Boolean(algorithm.selected)
+  }));
+  const selectedComparison = algorithmComparison.find((algorithm) => algorithm.selected)
+    || algorithmComparison.find((algorithm) => algorithm.name === selectedAlgorithm);
+  const selectedMae = Number(selectedComparison?.mae ?? modelMetrics.mae);
+  const selectedRmse = Number(selectedComparison?.rmse ?? modelMetrics.rmse);
+  const selectedR2 = Number(selectedComparison?.r2 ?? modelMetrics.r2);
+  const hasSelectedMetrics = [selectedMae, selectedRmse, selectedR2].every(Number.isFinite);
   useEffect(() => {
     loadDashboardData({ notify: true });
     loadMlInsights();
@@ -142,7 +163,7 @@ const Dashboard = () => {
       }
     } catch (error) {
       console.error('Error loading dashboard data:', error);
-      setDataError('No se pudieron leer los datos reales del data warehouse. Verifica el acceso a fact_sales, dim_customers y dim_products.');
+      setDataError('No se pudieron leer los datos reales. Verifica el acceso a orders, profiles, fact_sales y las tablas del data warehouse.');
       // En una actualización de fondo conservamos los últimos datos válidos.
       if (showLoading) {
         setDashboardMetrics({
@@ -190,7 +211,7 @@ const Dashboard = () => {
             </span>
           </div>
           <p className="text-gray-600 mt-1">Resumen general y pronósticos de Machine Learning · {mlInsights?.kpis_generales?.periodo_analizado}</p>
-          <p className="text-xs text-gray-500 mt-1">Fuente de KPIs: {dashboardMetrics.source || 'fact_sales + dim_customers + dim_products'}</p>
+          <p className="text-xs text-gray-500 mt-1">Fuente de KPIs: {dashboardMetrics.source || 'orders + profiles + fact_sales'}</p>
         </div>
         <Button
           onClick={async () => {
@@ -319,6 +340,124 @@ const Dashboard = () => {
         )}
       </motion.section>
 
+      {/* Gráfico estadístico de calidad del modelo ML */}
+      <motion.section
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="rounded-xl border border-indigo-100 bg-white p-5 shadow-sm"
+      >
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Gráfico estadístico del modelo</h3>
+            <p className="mt-1 text-xs text-gray-500">
+              Comparación visual de los errores de predicción y la capacidad explicativa de cada algoritmo.
+              En MAE y RMSE, un valor menor es mejor; en R², un valor mayor es mejor.
+            </p>
+          </div>
+          <span className="mt-1 inline-flex items-center rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700">
+            Mejor modelo: {selectedAlgorithm}
+          </span>
+        </div>
+
+        {algorithmChartData.length === 0 ? (
+          <p className="mt-4 rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm text-amber-800">
+            No hay métricas suficientes para construir el gráfico. Ejecuta el pipeline de ML y vuelve a actualizar.
+          </p>
+        ) : (
+          <div className="mt-5 grid grid-cols-1 gap-6 xl:grid-cols-2">
+            <div className="min-w-0">
+              <h4 className="mb-2 text-sm font-semibold text-gray-700">Errores de predicción</h4>
+              <div className="h-80" role="img" aria-label="Comparación de MAE y RMSE por algoritmo">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={algorithmChartData}
+                    layout="vertical"
+                    margin={{ top: 8, right: 16, left: 12, bottom: 8 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" tickFormatter={(value) => Number(value).toFixed(2)} />
+                    <YAxis type="category" dataKey="name" width={128} tick={{ fontSize: 11 }} />
+                    <Tooltip formatter={(value, name) => [Number(value).toFixed(3), name]} />
+                    <Legend />
+                    <Bar dataKey="mae" name="MAE ↓" fill="#8B5CF6" radius={[0, 4, 4, 0]} />
+                    <Bar dataKey="rmse" name="RMSE ↓" fill="#4F46E5" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="min-w-0">
+              <h4 className="mb-2 text-sm font-semibold text-gray-700">Capacidad explicativa (R²)</h4>
+              <div className="h-80" role="img" aria-label="Comparación de R2 por algoritmo">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={algorithmChartData}
+                    layout="vertical"
+                    margin={{ top: 8, right: 16, left: 12, bottom: 8 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" domain={['auto', 'auto']} tickFormatter={(value) => Number(value).toFixed(2)} />
+                    <YAxis type="category" dataKey="name" width={128} tick={{ fontSize: 11 }} />
+                    <ReferenceLine x={0} stroke="#9CA3AF" />
+                    <Tooltip formatter={(value) => [Number(value).toFixed(3), 'R²']} />
+                    <Bar dataKey="r2" name="R² ↑" fill="#0EA5E9" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-6 border-t border-gray-100 pt-5">
+          <h4 className="text-sm font-semibold text-gray-800">¿Qué hace cada algoritmo?</h4>
+          <p className="mt-1 text-xs text-gray-500">
+            Resumen práctico para interpretar la comparación del pronóstico de demanda.
+          </p>
+
+          {algorithmComparison.length > 0 && (
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {algorithmComparison.map((algorithm) => (
+                <div
+                  key={algorithm.key || algorithm.name}
+                  className={`rounded-lg border p-4 ${algorithm.selected ? 'border-emerald-300 bg-emerald-50/70 ring-1 ring-emerald-200' : 'border-gray-100 bg-gray-50/50'}`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h5 className="font-semibold text-gray-900">{algorithm.name}</h5>
+                      <p className="text-[11px] text-gray-500">{algorithm.family}</p>
+                    </div>
+                    {algorithm.selected && (
+                      <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-bold text-emerald-700">
+                        ELEGIDO
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-3 text-xs leading-5 text-gray-600">
+                    {ALGORITHM_EXPLANATIONS[algorithm.key] || algorithm.reason || 'Algoritmo de pronóstico evaluado por el pipeline.'}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-semibold text-gray-500">
+                    <span>MAE: {Number.isFinite(Number(algorithm.mae)) ? Number(algorithm.mae).toFixed(3) : '—'}</span>
+                    <span>RMSE: {Number.isFinite(Number(algorithm.rmse)) ? Number(algorithm.rmse).toFixed(3) : '—'}</span>
+                    <span>R²: {Number.isFinite(Number(algorithm.r2)) ? Number(algorithm.r2).toFixed(3) : '—'}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-4 rounded-lg border border-indigo-100 bg-indigo-50/70 p-4 text-sm text-indigo-900">
+            <p className="font-semibold">¿Por qué se escogió {selectedAlgorithm}?</p>
+            <p className="mt-1 text-xs leading-5 text-indigo-800">
+              El pipeline selecciona primero el menor MAE y usa el menor RMSE como desempate. En esta ejecución,
+              {hasSelectedMetrics
+                ? ` ${selectedAlgorithm} obtuvo MAE ${selectedMae.toFixed(3)}, RMSE ${selectedRmse.toFixed(3)} y R² ${selectedR2.toFixed(3)}.`
+                : ' sus métricas todavía no están disponibles.'}
+              {' '}{selectedComparison?.reason || 'Por eso se utiliza para generar el pronóstico de demanda a 7, 15 y 30 días.'}
+            </p>
+          </div>
+        </div>
+      </motion.section>
+
       {/* Métricas principales */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         <motion.div
@@ -330,7 +469,7 @@ const Dashboard = () => {
             <div>
               <p className="text-green-100 text-sm">Ventas Totales</p>
               <p className="text-3xl font-bold mt-1">S/{dashboardMetrics.totalSales.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-              <p className="text-xs text-green-200 mt-1">Desde fact_sales · {dashboardMetrics.totalOrders.toLocaleString()} pedidos</p>
+              <p className="text-xs text-green-200 mt-1">Pedidos y ventas en vivo · {dashboardMetrics.totalOrders.toLocaleString()} pedidos</p>
             </div>
             <DollarSign className="w-12 h-12 text-green-200" />
           </div>
@@ -378,7 +517,7 @@ const Dashboard = () => {
             <div>
               <p className="text-orange-100 text-sm">Clientes Analizados</p>
               <p className="text-3xl font-bold mt-1">{dashboardMetrics.totalCustomers.toLocaleString()}</p>
-              <p className="text-xs text-orange-200 mt-1">Registrados en dim_customers</p>
+              <p className="text-xs text-orange-200 mt-1">profiles + dim_customers</p>
             </div>
             <Users className="w-12 h-12 text-orange-200" />
           </div>
@@ -410,7 +549,7 @@ const Dashboard = () => {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-lg font-semibold text-gray-900">Evolución de Ventas por Mes</h3>
-            <p className="text-xs text-gray-500 mt-0.5">Ventas agrupadas directamente desde fact_sales</p>
+            <p className="text-xs text-gray-500 mt-0.5">Ventas y pedidos agrupados desde orders + fact_sales</p>
           </div>
           <span className="text-xs text-gray-500 font-medium flex items-center gap-1">
             <BarChart3 className="w-3.5 h-3.5" /> Histórico 2024
@@ -446,17 +585,17 @@ const Dashboard = () => {
         <div className="bg-white rounded-xl border p-5 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Unidades vendidas</p>
           <p className="text-3xl font-bold text-blue-700 mt-1">{Number(dashboardMetrics.totalQuantitySold || 0).toLocaleString()}</p>
-          <p className="text-xs text-gray-500 mt-1">SUM(quantity_sold)</p>
+          <p className="text-xs text-gray-500 mt-1">Pedidos y ventas actuales</p>
         </div>
         <div className="bg-white rounded-xl border p-5 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Utilidad acumulada</p>
           <p className="text-3xl font-bold text-emerald-700 mt-1">S/ {Number(dashboardMetrics.totalProfit || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 })}</p>
-          <p className="text-xs text-gray-500 mt-1">SUM(profit_amount)</p>
+          <p className="text-xs text-gray-500 mt-1">Fact_sales y pedidos procesados</p>
         </div>
         <div className="bg-white rounded-xl border p-5 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Descuentos aplicados</p>
           <p className="text-3xl font-bold text-amber-700 mt-1">S/ {Number(dashboardMetrics.totalDiscounts || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 })}</p>
-          <p className="text-xs text-gray-500 mt-1">SUM(discount_amount)</p>
+          <p className="text-xs text-gray-500 mt-1">Descuentos registrados</p>
         </div>
       </div>
 
@@ -468,7 +607,7 @@ const Dashboard = () => {
       >
         <div className="p-5 border-b border-gray-100">
           <h3 className="text-lg font-semibold text-gray-900">Productos líderes por ingresos</h3>
-          <p className="text-xs text-gray-500 mt-1">Ranking real de fact_sales unido con dim_products</p>
+          <p className="text-xs text-gray-500 mt-1">Ranking real de orders + fact_sales</p>
         </div>
         {topProducts.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-500">No hay ventas disponibles para calcular el ranking.</div>

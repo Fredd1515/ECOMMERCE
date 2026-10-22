@@ -30,6 +30,21 @@ const getDateValue = (sale) => {
   return null;
 };
 
+const getLimaDateKey = (value) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Lima',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date).reduce((result, part) => {
+    if (part.type !== 'literal') result[part.type] = part.value;
+    return result;
+  }, {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+};
+
 const getSaleRevenue = (sale) => toNumber(
   sale.final_price ?? sale.total_price ?? (toNumber(sale.unit_price) * toNumber(sale.quantity_sold))
 );
@@ -56,18 +71,98 @@ const fetchTable = async (table) => {
   return { data: data || [], error };
 };
 
+const isCancelledOrder = (order) => ['cancelled', 'canceled', 'anulado', 'cancelado'].includes(
+  String(order?.status || '').toLowerCase()
+);
+
+// Los pedidos son la fuente operativa actual. fact_sales conserva el histórico
+// y puede tardar en replicarse; estas filas cubren ambos casos sin duplicar un
+// pedido que ya fue escrito en fact_sales.
+const getOperationalSales = (context) => {
+  const sales = context.sales || [];
+  const orders = context.orders || [];
+  const orderItems = context.orderItems || [];
+  const factOrderIds = new Set(sales.map((sale) => String(sale.order_id || '')));
+  const productsById = new Map((context.products || []).map((product) => [String(product.product_id), product]));
+  const itemsByOrder = new Map();
+
+  orderItems.forEach((item) => {
+    const key = String(item.order_id || '');
+    const list = itemsByOrder.get(key) || [];
+    list.push(item);
+    itemsByOrder.set(key, list);
+  });
+
+  const liveSales = orders
+    .filter((order) => !isCancelledOrder(order) && !factOrderIds.has(String(order.id)))
+    .flatMap((order) => {
+      const items = itemsByOrder.get(String(order.id)) || [];
+      // Si RLS o una instalación antigua no deja leer order_items, el pedido
+      // igual debe aparecer en los KPIs. Se crea una fila de respaldo a nivel
+      // de pedido; cuando los ítems estén disponibles se reemplaza por el
+      // desglose real y no se duplica la orden.
+      const operationalItems = items.length > 0
+        ? items
+        : [{
+          id: `order-${order.id}`,
+          product_id: null,
+          product_name: 'Pedido sin detalle visible',
+          quantity: 1,
+          unit_price: toNumber(order.final_amount ?? order.total_amount ?? order.subtotal),
+          total_price: toNumber(order.final_amount ?? order.total_amount ?? order.subtotal)
+        }];
+
+      return operationalItems.map((item) => {
+        const product = productsById.get(String(item.product_id));
+        const unitPrice = toNumber(item.unit_price);
+        const quantity = toNumber(item.quantity);
+        const totalPrice = toNumber(item.total_price || unitPrice * quantity);
+        const unitCost = Number((unitPrice * 0.7).toFixed(2));
+        const totalCost = Number((unitCost * quantity).toFixed(2));
+
+        return {
+          sales_key: `order-item-${item.id}`,
+          order_item_id: item.id,
+          order_id: order.id,
+          customer_id: order.customer_id,
+          customer_key: order.customer_id,
+          product_id: item.product_id,
+          product_key: product?.product_key,
+          product_name: item.product_name || product?.name,
+          quantity_sold: quantity,
+          unit_price: unitPrice,
+          total_price: totalPrice,
+          final_price: totalPrice,
+          discount_amount: toNumber(order.discount ?? order.discount_amount),
+          profit_amount: Number((totalPrice - totalCost).toFixed(2)),
+          payment_method: order.payment_method,
+          payment_status: order.payment_status,
+          order_status: order.status,
+          order_date: order.order_date || order.created_at
+        };
+      });
+    });
+
+  return [...sales, ...liveSales];
+};
+
 export const getWarehouseContext = async () => {
-  const [salesResult, customersResult, productsResult] = await Promise.all([
+  const [salesResult, customersResult, productsResult, profilesResult, ordersResult, orderItemsResult] = await Promise.all([
     fetchTable('fact_sales'),
     fetchTable('dim_customers'),
-    fetchTable('dim_products')
+    fetchTable('dim_products'),
+    fetchTable('profiles'),
+    fetchTable('orders'),
+    fetchTable('order_items')
   ]);
 
-  if (salesResult.error) {
+  const sourceResults = [salesResult, customersResult, productsResult, profilesResult, ordersResult, orderItemsResult];
+  const allSourcesUnavailable = sourceResults.every((result) => result.error);
+  if (allSourcesUnavailable) {
     return {
       data: null,
-      error: salesResult.error,
-      source: 'fact_sales'
+      error: salesResult.error || ordersResult.error || profilesResult.error,
+      source: 'orders + profiles + fact_sales'
     };
   }
 
@@ -77,17 +172,30 @@ export const getWarehouseContext = async () => {
   const sales = useLocalSales ? localSnapshot.sales : salesResult.data;
   const customers = useLocalCustomers ? localSnapshot.customers : customersResult.data;
   const products = useLocalProducts ? localSnapshot.products : productsResult.data;
+  const liveSources = [
+    !salesResult.error && 'fact_sales',
+    !ordersResult.error && 'orders',
+    !profilesResult.error && 'profiles',
+    !customersResult.error && 'dim_customers',
+    !productsResult.error && 'dim_products'
+  ].filter(Boolean);
   const source = useLocalSales || useLocalCustomers || useLocalProducts
     ? 'snapshot local · aplica la migración RLS para datos en vivo'
-    : 'fact_sales + dim_customers + dim_products';
+    : liveSources.join(' + ') || 'sin fuentes disponibles';
 
   return {
     data: {
       sales,
       customers,
       products,
+      profiles: profilesResult.data,
+      orders: ordersResult.data,
+      orderItems: orderItemsResult.data,
       customerError: customersResult.error,
-      productError: productsResult.error
+      productError: productsResult.error,
+      profilesError: profilesResult.error,
+      ordersError: ordersResult.error,
+      orderItemsError: orderItemsResult.error
     },
     error: null,
     source
@@ -98,16 +206,25 @@ export const getWarehouseDashboardMetrics = async () => {
   const { data: context, error, source } = await getWarehouseContext();
   if (error) return { data: null, error, source };
 
-  const { sales, customers, products } = context;
+  const { customers, products } = context;
+  const sales = getOperationalSales(context);
   const validSales = sales.filter((sale) => !isCancelled(sale));
   const totalSales = validSales.reduce((sum, sale) => sum + getSaleRevenue(sale), 0);
   const totalOrders = uniqueValues(validSales, (sale) => sale.order_id || sale.sales_key);
-  const totalCustomers = customers.length > 0
-    ? uniqueValues(customers, (customer) => customer.customer_key)
-    : uniqueValues(validSales, (sale) => sale.customer_key);
+  const totalCustomerKeys = new Set();
+  customers.forEach((customer) => totalCustomerKeys.add(
+    customer.user_id ? `user:${customer.user_id}` : `dim:${customer.customer_key}`
+  ));
+  (context.profiles || [])
+    .filter((profile) => profile.role !== 'admin')
+    .forEach((profile) => totalCustomerKeys.add(`user:${profile.id}`));
+  validSales.forEach((sale) => totalCustomerKeys.add(
+    sale.customer_id ? `user:${sale.customer_id}` : `dim:${sale.customer_key || sale.sales_key}`
+  ));
+  const totalCustomers = totalCustomerKeys.size;
   const totalProducts = products.length > 0
     ? uniqueValues(products, (product) => product.product_key)
-    : uniqueValues(validSales, (sale) => sale.product_key);
+    : uniqueValues(validSales, (sale) => sale.product_key || sale.product_id);
 
   let lowStockProducts = null;
   let inventorySource = 'fact_inventory no disponible';
@@ -160,7 +277,7 @@ export const getWarehouseSalesChartData = async (months = 12) => {
   if (error) return { data: [], error, source };
 
   const grouped = new Map();
-  context.sales.filter((sale) => !isCancelled(sale)).forEach((sale) => {
+  getOperationalSales(context).filter((sale) => !isCancelled(sale)).forEach((sale) => {
     const date = getDateValue(sale);
     if (!date || Number.isNaN(date.getTime())) return;
     const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -200,7 +317,7 @@ export const getWarehouseProductSales = async (startDate, endDate) => {
   if (error) return { data: [], error, source };
 
   const { start, end } = getDateRange(startDate, endDate);
-  let sales = context.sales.filter((sale) => !isCancelled(sale));
+  let sales = getOperationalSales(context).filter((sale) => !isCancelled(sale));
   const filteredSales = sales.filter((sale) => {
     const date = getDateValue(sale);
     return date && (!start || date >= start) && (!end || date <= end);
@@ -225,13 +342,14 @@ export const getWarehouseProductSales = async (startDate, endDate) => {
   }
 
   const productMap = new Map(context.products.map((product) => [String(product.product_key), product]));
+  const productMapById = new Map(context.products.map((product) => [String(product.product_id), product]));
   const grouped = new Map();
   sales.forEach((sale) => {
     const key = String(sale.product_key ?? sale.product_id ?? 'unknown');
-    const product = productMap.get(key);
+    const product = productMap.get(key) || productMapById.get(String(sale.product_id));
     const existing = grouped.get(key) || {
-      product_key: sale.product_key,
-      product_name: product?.name || `Producto ${sale.product_key ?? 'sin clave'}`,
+      product_key: sale.product_key || sale.product_id,
+      product_name: sale.product_name || product?.name || `Producto ${sale.product_key ?? sale.product_id ?? 'sin clave'}`,
       category_name: product?.category_name || product?.category || 'Sin categoría',
       quantity_sold: 0,
       total_sales: 0,
@@ -256,40 +374,109 @@ export const getWarehouseProductSales = async (startDate, endDate) => {
   };
 };
 
+export const getWarehouseDailySales = async (days = 7) => {
+  const { data: context, error, source } = await getWarehouseContext();
+  if (error) return { data: [], error, source };
+
+  const safeDays = Math.max(1, Number(days) || 7);
+  const todayKey = getLimaDateKey(new Date());
+  const today = new Date(`${todayKey}T00:00:00Z`);
+  const grouped = new Map();
+
+  for (let offset = safeDays - 1; offset >= 0; offset -= 1) {
+    const date = new Date(today);
+    date.setUTCDate(today.getUTCDate() - offset);
+    const key = date.toISOString().slice(0, 10);
+    grouped.set(key, {
+      date: key,
+      label: date.toLocaleDateString('es-PE', { timeZone: 'UTC', weekday: 'short', day: '2-digit', month: '2-digit' }),
+      sales: 0,
+      orders: new Set(),
+      quantitySold: 0
+    });
+  }
+
+  getOperationalSales(context)
+    .filter((sale) => !isCancelled(sale))
+    .forEach((sale) => {
+      const date = getDateValue(sale);
+      if (!date || Number.isNaN(date.getTime())) return;
+      const key = getLimaDateKey(date);
+      const day = grouped.get(key);
+      if (!day) return;
+      day.sales += getSaleRevenue(sale);
+      day.orders.add(sale.order_id || sale.sales_key);
+      day.quantitySold += toNumber(sale.quantity_sold);
+    });
+
+  return {
+    data: Array.from(grouped.values()).map(({ orders, ...day }) => ({
+      ...day,
+      orders: orders.size,
+      sales: Number(day.sales.toFixed(2))
+    })),
+    error: null,
+    source
+  };
+};
+
 export const getWarehouseCustomerAnalytics = async (limit = 10000) => {
   const { data: context, error, source } = await getWarehouseContext();
   if (error) return { data: [], error, source };
 
-  const customerMap = new Map(context.customers.map((customer) => [String(customer.customer_key), {
-    customer_id: customer.customer_key,
-    email: customer.email,
-    full_name: customer.full_name || `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || `Cliente ${customer.customer_key}`,
-    first_name: customer.first_name,
-    last_name: customer.last_name,
-    created_at: customer.registration_date || customer.created_at,
-    total_orders: 0,
-    total_spent: 0,
-    total_quantity: 0
-  }]));
+  const customerMap = new Map();
+  const dimensionToCustomer = new Map();
+  const userToCustomer = new Map();
+  const orderSets = new Map();
 
-  context.sales.filter((sale) => !isCancelled(sale)).forEach((sale) => {
-    const key = String(sale.customer_key ?? 'unknown');
-    const customer = customerMap.get(key) || {
-      customer_id: sale.customer_key,
-      email: '',
-      full_name: `Cliente ${sale.customer_key ?? 'sin clave'}`,
-      total_orders: 0,
-      total_spent: 0,
-      total_quantity: 0
-    };
-    customer.total_spent += getSaleRevenue(sale);
-    customer.total_quantity += toNumber(sale.quantity_sold);
-    customerMap.set(key, customer);
+  const ensureCustomer = (key, customer) => {
+    if (!customerMap.has(key)) {
+      customerMap.set(key, {
+        customer_id: customer.customer_id || customer.id || key,
+        email: customer.email || '',
+        full_name: customer.full_name
+          || `${customer.first_name || ''} ${customer.last_name || ''}`.trim()
+          || customer.name
+          || `Cliente ${customer.customer_id || customer.id || key}`,
+        first_name: customer.first_name,
+        last_name: customer.last_name,
+        created_at: customer.registration_date || customer.created_at,
+        total_orders: 0,
+        total_spent: 0,
+        total_quantity: 0
+      });
+    }
+    return customerMap.get(key);
+  };
+
+  // profiles es la fuente de todos los usuarios registrados; dim_customers
+  // solo contiene clientes que ya tuvieron una venta replicada.
+  (context.profiles || [])
+    .filter((profile) => profile.role !== 'admin')
+    .forEach((profile) => {
+      const key = `user:${profile.id}`;
+      ensureCustomer(key, profile);
+      userToCustomer.set(String(profile.id), key);
+    });
+
+  (context.customers || []).forEach((customer) => {
+    const key = customer.user_id ? `user:${customer.user_id}` : `dim:${customer.customer_key}`;
+    ensureCustomer(key, customer);
+    dimensionToCustomer.set(String(customer.customer_key), key);
+    if (customer.user_id) userToCustomer.set(String(customer.user_id), key);
   });
 
-  const orderSets = new Map();
-  context.sales.filter((sale) => !isCancelled(sale)).forEach((sale) => {
-    const key = String(sale.customer_key ?? 'unknown');
+  getOperationalSales(context).filter((sale) => !isCancelled(sale)).forEach((sale) => {
+    const key = sale.customer_id
+      ? (userToCustomer.get(String(sale.customer_id)) || `user:${sale.customer_id}`)
+      : (dimensionToCustomer.get(String(sale.customer_key)) || `dim:${sale.customer_key ?? 'unknown'}`);
+    const customer = ensureCustomer(key, {
+      customer_id: sale.customer_id || sale.customer_key,
+      full_name: sale.customer_name,
+      email: sale.customer_email
+    });
+    customer.total_spent += getSaleRevenue(sale);
+    customer.total_quantity += toNumber(sale.quantity_sold);
     if (!orderSets.has(key)) orderSets.set(key, new Set());
     orderSets.get(key).add(sale.order_id || sale.sales_key);
   });

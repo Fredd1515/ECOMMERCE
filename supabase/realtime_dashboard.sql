@@ -5,7 +5,7 @@ DO $$
 DECLARE
   table_name TEXT;
 BEGIN
-  FOREACH table_name IN ARRAY ARRAY['fact_sales', 'orders', 'products', 'fact_inventory']
+  FOREACH table_name IN ARRAY ARRAY['fact_sales', 'orders', 'order_items', 'products', 'profiles', 'dim_customers', 'fact_inventory']
   LOOP
     IF NOT EXISTS (
       SELECT 1
@@ -23,5 +23,8 @@ END $$;
 -- incluso cuando la fila cambia de estado.
 ALTER TABLE public.fact_sales REPLICA IDENTITY FULL;
 ALTER TABLE public.orders REPLICA IDENTITY FULL;
+ALTER TABLE public.order_items REPLICA IDENTITY FULL;
 ALTER TABLE public.products REPLICA IDENTITY FULL;
+ALTER TABLE public.profiles REPLICA IDENTITY FULL;
+ALTER TABLE public.dim_customers REPLICA IDENTITY FULL;
 ALTER TABLE public.fact_inventory REPLICA IDENTITY FULL;

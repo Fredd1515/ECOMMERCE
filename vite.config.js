@@ -1,10 +1,13 @@
 import path from 'node:path';
 import react from '@vitejs/plugin-react';
 import { createLogger, defineConfig, loadEnv } from 'vite';
+import geminiHandler from './api/gemini.js';
 import mlInsightsHandler from './api/ml-insights.js';
 
 const localEnv = loadEnv('development', process.cwd(), '');
 const localGroqApiKey = localEnv.GROQ_API_KEY || process.env.GROQ_API_KEY || '';
+const localGeminiApiKey = localEnv.GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
+const localGeminiModel = localEnv.GEMINI_MODEL || process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 const localOpenRouterApiKey = localEnv.OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEY || '';
 const localOpenRouterModel = localEnv.OPENROUTER_MODEL || process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3.5-lightning:free';
 
@@ -85,6 +88,19 @@ const localGroqProxy = {
         }
         res.end(JSON.stringify({ error: { message: 'No se pudo conectar con Groq.' } }));
       }
+    });
+  },
+};
+
+const localGeminiProxy = {
+  name: 'local-gemini-proxy',
+  configureServer(server) {
+    server.middlewares.use('/api/gemini', async (req, res) => {
+      await geminiHandler(req, res, {
+        geminiApiKey: localGeminiApiKey,
+        groqApiKey: localGroqApiKey,
+        model: localGeminiModel,
+      });
     });
   },
 };
@@ -358,6 +374,7 @@ export default defineConfig({
 	customLogger: logger,
 	plugins: [
 		react(),
+		localGeminiProxy,
 		localGroqProxy,
 		localOpenRouterProxy,
 		localMlInsightsProxy,
