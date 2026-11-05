@@ -13,6 +13,8 @@ El puente y OpenPLC se ejecutan en la misma PC. Solo el puente se conecta hacia 
 
 ## Preparar la PC donde corre OpenPLC
 
+El programa IEC 61131-3 de prueba está en `openplc/gemelo_digital_demo.st`. Ábrelo desde OpenPLC Editor o copia su contenido a un POU de tipo Structured Text, compílalo y cárgalo en el runtime local. En el mapa del archivo se indican las áreas Modbus que usa el puente. Los menús y el método para cargarlo cambian entre OpenPLC v3 y v4.
+
 Abre PowerShell en esta carpeta y ejecuta:
 
 ```powershell
