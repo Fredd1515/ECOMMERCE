@@ -43,7 +43,7 @@ def read_snapshot(client: ModbusTcpClient) -> dict:
     unit_id = env_int("MODBUS_UNIT_ID", 1)
     snapshot: dict = {"timestamp": utc_now(), "connected": True}
 
-    coils_count = env_int("MODBUS_COILS_COUNT", 8)
+    coils_count = env_int("MODBUS_COILS_COUNT", 1)
     if coils_count > 0:
         result = client.read_coils(
             address=env_int("MODBUS_COILS_ADDRESS", 0), count=coils_count, slave=unit_id
@@ -52,7 +52,7 @@ def read_snapshot(client: ModbusTcpClient) -> dict:
             raise RuntimeError(f"read_coils: {result}")
         snapshot["coils"] = list(result.bits[:coils_count])
 
-    inputs_count = env_int("MODBUS_DISCRETE_INPUTS_COUNT", 8)
+    inputs_count = env_int("MODBUS_DISCRETE_INPUTS_COUNT", 1)
     if inputs_count > 0:
         result = client.read_discrete_inputs(
             address=env_int("MODBUS_DISCRETE_INPUTS_ADDRESS", 0), count=inputs_count, slave=unit_id
@@ -61,7 +61,7 @@ def read_snapshot(client: ModbusTcpClient) -> dict:
             raise RuntimeError(f"read_discrete_inputs: {result}")
         snapshot["discrete_inputs"] = list(result.bits[:inputs_count])
 
-    holding_count = env_int("MODBUS_HOLDING_REGISTERS_COUNT", 10)
+    holding_count = env_int("MODBUS_HOLDING_REGISTERS_COUNT", 1)
     if holding_count > 0:
         result = client.read_holding_registers(
             address=env_int("MODBUS_HOLDING_REGISTERS_ADDRESS", 0), count=holding_count, slave=unit_id
@@ -70,7 +70,7 @@ def read_snapshot(client: ModbusTcpClient) -> dict:
             raise RuntimeError(f"read_holding_registers: {result}")
         snapshot["holding_registers"] = list(result.registers)
 
-    input_register_count = env_int("MODBUS_INPUT_REGISTERS_COUNT", 10)
+    input_register_count = env_int("MODBUS_INPUT_REGISTERS_COUNT", 1)
     if input_register_count > 0:
         result = client.read_input_registers(
             address=env_int("MODBUS_INPUT_REGISTERS_ADDRESS", 0), count=input_register_count, slave=unit_id
