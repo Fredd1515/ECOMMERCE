@@ -2,9 +2,6 @@
   "name": "digital-twin-node-red",
   "version": "0.1.0",
   "private": true,
-  "description": "Node-RED cloud runtime for the OpenPLC digital twin",
-  "dependencies": {
-    "mqtt": "^5.10.4"
-  }
+  "description": "Node-RED cloud runtime for the OpenPLC digital twin using HTTPS"
 }
 
