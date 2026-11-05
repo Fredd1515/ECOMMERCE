@@ -1,0 +1,73 @@
+<script type="text/javascript">
+    RED.nodes.registerType('digital-twin-mqtt-in', {
+        category: 'network',
+        color: '#c7e9c0',
+        defaults: {
+            name: { value: '' },
+            topic: { value: '' },
+            qos: { value: '1', required: true, validate: RED.validators.number() }
+        },
+        inputs: 0,
+        outputs: 1,
+        icon: 'bridge.svg',
+        label: function () { return this.name || 'MQTT estado OpenPLC'; }
+    });
+
+    RED.nodes.registerType('digital-twin-mqtt-out', {
+        category: 'network',
+        color: '#c7e9c0',
+        defaults: {
+            name: { value: '' },
+            topic: { value: '' },
+            qos: { value: '1', required: true, validate: RED.validators.number() },
+            retain: { value: false }
+        },
+        inputs: 1,
+        outputs: 0,
+        icon: 'bridge.svg',
+        label: function () { return this.name || 'MQTT comando OpenPLC'; }
+    });
+</script>
+
+<script type="text/html" data-template-name="digital-twin-mqtt-in">
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Nombre</label>
+        <input type="text" id="node-input-name">
+    </div>
+    <div class="form-row">
+        <label for="node-input-topic"><i class="fa fa-envelope"></i> Tópico</label>
+        <input type="text" id="node-input-topic" placeholder="MQTT_STATE_TOPIC">
+    </div>
+    <div class="form-row">
+        <label for="node-input-qos"><i class="fa fa-signal"></i> QoS</label>
+        <input type="number" id="node-input-qos" min="0" max="2">
+    </div>
+</script>
+
+<script type="text/html" data-help-name="digital-twin-mqtt-in">
+    <p>Se suscribe al estado de OpenPLC usando MQTT/TLS y las variables de entorno del servicio.</p>
+</script>
+
+<script type="text/html" data-template-name="digital-twin-mqtt-out">
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Nombre</label>
+        <input type="text" id="node-input-name">
+    </div>
+    <div class="form-row">
+        <label for="node-input-topic"><i class="fa fa-envelope"></i> Tópico</label>
+        <input type="text" id="node-input-topic" placeholder="MQTT_COMMAND_TOPIC">
+    </div>
+    <div class="form-row">
+        <label for="node-input-qos"><i class="fa fa-signal"></i> QoS</label>
+        <input type="number" id="node-input-qos" min="0" max="2">
+    </div>
+    <div class="form-row">
+        <label for="node-input-retain"><i class="fa fa-bookmark"></i> Retener</label>
+        <input type="checkbox" id="node-input-retain" style="display:inline-block; width:auto; vertical-align:top;">
+    </div>
+</script>
+
+<script type="text/html" data-help-name="digital-twin-mqtt-out">
+    <p>Publica el mensaje de entrada en MQTT/TLS. Si el tópico está vacío usa <code>MQTT_COMMAND_TOPIC</code>.</p>
+</script>
+
