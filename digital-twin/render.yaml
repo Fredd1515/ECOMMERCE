@@ -7,22 +7,17 @@ services:
     dockerfilePath: ./Dockerfile
     healthCheckPath: /healthz
     envVars:
-      - key: MQTT_URL
-        sync: false
-      - key: MQTT_USERNAME
-        sync: false
-      - key: MQTT_PASSWORD
-        sync: false
+      # MQTT se agregará en la segunda fase, cuando conectemos OpenPLC.
       - key: MQTT_BASE_TOPIC
         value: digital-twin/openplc
       - key: MQTT_TLS_INSECURE
         value: "false"
+      # Render genera estos secretos automáticamente.
       - key: NODE_RED_CREDENTIAL_SECRET
-        sync: false
+        generateValue: true
       - key: NODE_RED_ADMIN_USER
         value: admin
       - key: NODE_RED_ADMIN_PASSWORD_HASH
         sync: false
       - key: API_KEY
-        sync: false
-
+        generateValue: true
