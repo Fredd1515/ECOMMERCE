@@ -1,6 +1,6 @@
 # Gemelo digital: Node-RED en Render + OpenPLC local
 
-Primera fase del proyecto: Node-RED se publica como un Web Service gratuito en Render y OpenPLC se mantiene en la PC local.
+Primera fase del proyecto: Node-RED se publica como un Web Service gratuito en Render y se deja disponible su editor. OpenPLC y MQTT se conectan en la segunda fase.
 
 ## Arquitectura
 
@@ -30,7 +30,18 @@ No se intenta que Render abra directamente `192.168.x.x:502`: una PC local norma
 - `local_bridge.py`, que lee/escribe coils y registros Modbus de OpenPLC y publica JSON retenido en MQTT.
 - `.env.example` con las variables iniciales.
 
-## 1. Crear el broker MQTT
+## 1. Primera fase: abrir el editor de Node-RED
+
+El despliegue inicial no necesita todavía un broker MQTT ni OpenPLC. Render genera automáticamente `NODE_RED_CREDENTIAL_SECRET` y `API_KEY`; solo se solicita el hash de la contraseña del editor en `NODE_RED_ADMIN_PASSWORD_HASH`.
+
+El editor queda en `/red` y la HMI en `/`. El servicio debe responder en:
+
+```text
+https://TU-SERVICIO.onrender.com/healthz
+https://TU-SERVICIO.onrender.com/red
+```
+
+## 2. Segunda fase: crear el broker MQTT
 
 Usa un broker que permita MQTT sobre TLS, usuario/contraseña y ACL por tópicos. Para una prueba se puede usar EMQX Cloud Serverless u otro proveedor equivalente. El cliente debe usar una URL `mqtts://...:8883`; no uses `mqtt://...:1883` en Internet.
 
@@ -42,18 +53,12 @@ digital-twin/openplc/#
 
 Guarda el host, puerto, usuario y contraseña. No los escribas dentro de `flows.json`, Python ni el repositorio.
 
-## 2. Configurar Render
+## 3. Configurar Render
 
 1. Sube este proyecto a un repositorio Git.
 2. En Render selecciona **New → Blueprint** y elige el repositorio.
 3. Render detectará `render.yaml` y creará un Web Service con plan `free`.
-4. Completa las variables secretas:
-   - `MQTT_URL`
-   - `MQTT_USERNAME`
-   - `MQTT_PASSWORD`
-   - `NODE_RED_CREDENTIAL_SECRET`
-   - `NODE_RED_ADMIN_PASSWORD_HASH`
-   - `API_KEY`
+4. En la primera fase completa únicamente `NODE_RED_ADMIN_PASSWORD_HASH`. Las variables MQTT se agregarán cuando se conecte OpenPLC.
 5. Genera el hash de la contraseña del editor antes de publicarlo:
 
    ```text
@@ -70,7 +75,7 @@ Guarda el host, puerto, usuario y contraseña. No los escribas dentro de `flows.
 
 Render espera que el servicio escuche en la variable `PORT`, y el proyecto ya la usa. El plan Free puede dormir después de un período sin tráfico y su sistema de archivos es efímero; por eso los flujos están dentro de la imagen y el estado se conserva mediante mensajes MQTT retenidos.
 
-## 3. Ejecutar el puente junto a OpenPLC
+## 4. Ejecutar el puente junto a OpenPLC
 
 En la PC donde corre OpenPLC:
 
