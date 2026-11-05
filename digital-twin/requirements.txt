@@ -1,0 +1,4 @@
+pymodbus>=3.8.0,<4
+python-dotenv>=1.0.1,<2
+requests>=2.32.0,<3
+

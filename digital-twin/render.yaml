@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: digital-twin-node-red
+    runtime: docker
+    plan: free
+    rootDir: digital-twin
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    envVars:
+      # El puente local se autentica ante estos endpoints HTTPS con API_KEY.
+      - key: NODE_RED_CREDENTIAL_SECRET
+        generateValue: true
+      - key: NODE_RED_ADMIN_USER
+        value: admin
+      - key: NODE_RED_ADMIN_PASSWORD_HASH
+        sync: false
+      - key: API_KEY
+        generateValue: true
+
