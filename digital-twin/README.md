@@ -1,149 +1,81 @@
-# Gemelo digital: Node-RED en Render + OpenPLC local
+# Gemelo digital: OpenPLC local y Node-RED en Render
 
-Primera fase del proyecto: Node-RED se publica como un Web Service gratuito en Render y se deja disponible su editor. OpenPLC y MQTT se conectan en la segunda fase.
-
-## Arquitectura
+## Arquitectura de esta etapa
 
 ```text
-OpenPLC local (Modbus TCP :502)
-        ^
-        | solo localhost/red local
-Puente Python local (PyModbus)
-        ^  MQTT sobre TLS, conexión saliente
-        v
-Broker MQTT con autenticación
-        ^  MQTT sobre TLS, conexión saliente
-        v
-Node-RED en Render Free (HMI + API + orquestación)
+OpenPLC local <--Modbus TCP--> Puente Python local <--HTTPS saliente--> Node-RED en Render
+                                                                         ^
+                                                                         |
+                                                          Panel del teléfono por HTTPS
 ```
 
-No se intenta que Render abra directamente `192.168.x.x:502`: una PC local normalmente está detrás de NAT y el puerto Modbus no debe quedar expuesto a Internet. El puente local mantiene el acceso a OpenPLC local y solo intercambia mensajes autenticados por MQTT/TLS.
+El puente y OpenPLC se ejecutan en la misma PC. Solo el puente se conecta hacia Node-RED por HTTPS; no se abre el puerto Modbus a Internet. El panel del teléfono usa la página y la API HTTPS de Node-RED. MQTT no participa en esta etapa.
 
-## Qué incluye esta base
+## Preparar la PC donde corre OpenPLC
 
-- `Dockerfile`, `package.json` y `render.yaml` para desplegar Node-RED en Render.
-- Un nodo MQTT/TLS propio que toma usuario, contraseña y URL desde variables de entorno.
-- HMI web en `/`.
-- Estado del PLC en `GET /api/state`.
-- Comandos en `POST /api/command`.
-- Health check en `/healthz`.
-- `local_bridge.py`, que lee/escribe coils y registros Modbus de OpenPLC y publica JSON retenido en MQTT.
-- `.env.example` con las variables iniciales.
-
-## 1. Primera fase: abrir el editor de Node-RED
-
-El despliegue inicial no necesita todavía un broker MQTT ni OpenPLC. Render genera automáticamente `NODE_RED_CREDENTIAL_SECRET` y `API_KEY`; solo se solicita el hash de la contraseña del editor en `NODE_RED_ADMIN_PASSWORD_HASH`.
-
-El editor queda en `/red` y la HMI en `/`. El servicio debe responder en:
-
-```text
-https://TU-SERVICIO.onrender.com/healthz
-https://TU-SERVICIO.onrender.com/red
-```
-
-## 2. Segunda fase: crear el broker MQTT
-
-Usa un broker que permita MQTT sobre TLS, usuario/contraseña y ACL por tópicos. Para una prueba se puede usar EMQX Cloud Serverless u otro proveedor equivalente. El cliente debe usar una URL `mqtts://...:8883`; no uses `mqtt://...:1883` en Internet.
-
-Crea un usuario MQTT y limita su ACL, idealmente, a:
-
-```text
-digital-twin/openplc/#
-```
-
-Guarda el host, puerto, usuario y contraseña. No los escribas dentro de `flows.json`, Python ni el repositorio.
-
-## 3. Configurar Render
-
-1. Sube este proyecto a un repositorio Git.
-2. En Render selecciona **New → Blueprint** y elige el repositorio.
-3. Render detectará `render.yaml` y creará un Web Service con plan `free`.
-4. En la primera fase completa únicamente `NODE_RED_ADMIN_PASSWORD_HASH`. Las variables MQTT se agregarán cuando se conecte OpenPLC.
-5. Genera el hash de la contraseña del editor antes de publicarlo:
-
-   ```text
-   node-red admin hash-pw
-   ```
-
-   Copia el hash resultante en `NODE_RED_ADMIN_PASSWORD_HASH`. El editor quedará en `/red`; la HMI queda en `/`.
-
-6. Después del despliegue, comprueba:
-
-   ```text
-   https://TU-SERVICIO.onrender.com/healthz
-   ```
-
-Render espera que el servicio escuche en la variable `PORT`, y el proyecto ya la usa. El plan Free puede dormir después de un período sin tráfico y su sistema de archivos es efímero; por eso los flujos están dentro de la imagen y el estado se conserva mediante mensajes MQTT retenidos.
-
-## 4. Ejecutar el puente junto a OpenPLC
-
-En la PC donde corre OpenPLC:
+Abre PowerShell en esta carpeta y ejecuta:
 
 ```powershell
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 Copy-Item .env.example .env
+notepad .env
 ```
 
-Edita `.env` con los datos del broker y confirma que `OPENPLC_HOST` y `OPENPLC_PORT` apuntan al servidor Modbus TCP de OpenPLC. Luego ejecuta:
+Si `.env` ya existe, no lo sobrescribas; ejecuta directamente `notepad .env`.
+
+Configura las primeras líneas de `.env`:
+
+```text
+NODE_RED_URL=https://digital-twin-node-red-yjfs.onrender.com
+API_KEY=PEGA_AQUI_EL_VALOR_DE_API_KEY_DE_RENDER
+OPENPLC_HOST=127.0.0.1
+OPENPLC_PORT=502
+```
+
+En Render, abre el servicio **digital-twin-node-red-yjfs → Environment** y revela/copia el valor de `API_KEY`. Usa ese mismo valor en `.env` y cuando el panel del teléfono lo solicite. No lo publiques ni lo envíes en un chat.
+
+Mantén el runtime de OpenPLC iniciado y confirma que el servidor Modbus TCP esté habilitado en el puerto `502`. Ajusta las direcciones y cantidades `MODBUS_*` del `.env` si tu programa usa otro mapa de memoria.
+
+## Iniciar y comprobar el puente
+
+Con OpenPLC en ejecución y el entorno virtual activo, inicia:
 
 ```powershell
 python .\local_bridge.py
 ```
 
-Si OpenPLC usa el puerto 502, Windows puede requerir permisos elevados para iniciar el servidor; el puente es un cliente y normalmente no necesita abrir ningún puerto entrante.
+La consola debe indicar que el puente inició. Si aparece un error de conexión Modbus, revisa el estado del runtime, el puerto y el mapa de registros. El puente vuelve a intentar conectarse mientras siga abierto.
 
-## 4. Formato de mensajes
+Abre el editor de Node-RED en:
 
-Estado publicado en `digital-twin/openplc/state`:
-
-```json
-{
-  "timestamp": "2026-11-05T15:00:00+00:00",
-  "connected": true,
-  "coils": [false, true],
-  "discrete_inputs": [true, false],
-  "holding_registers": [0, 123],
-  "input_registers": [456]
-}
+```text
+https://digital-twin-node-red-yjfs.onrender.com/red
 ```
 
-Comando publicado en `digital-twin/openplc/command`:
+Y el panel web, también desde el teléfono, en:
 
-```json
-{
-  "type": "holding_registers",
-  "address": 0,
-  "values": [123]
-}
+```text
+https://digital-twin-node-red-yjfs.onrender.com/
 ```
 
-Para una coil:
+En el panel, introduce la `API_KEY` de Render. El panel consulta el estado por HTTPS y envía comandos a la cola de Node-RED; el puente local recoge los comandos por HTTPS y los escribe en OpenPLC por Modbus TCP.
 
-```json
-{
-  "type": "coils",
-  "address": 0,
-  "values": [true]
-}
-```
+## Endpoints del puente
 
-Las direcciones son las direcciones Modbus usadas por la librería, normalmente comenzando en 0. Si tu documentación muestra `40001`, suele corresponder a la dirección `0` en la petición.
+- `POST /api/bridge/exchange`: el puente publica el estado actual y recoge comandos pendientes/resultados.
+- `GET /api/state`: el panel lee el último estado del PLC.
+- `POST /api/command`: el panel pone un comando en cola.
+- `GET /healthz`: comprobación de salud de Render.
 
-## Seguridad y límites de esta fase
+Todas las rutas `/api/` requieren el encabezado `x-api-key`, que el puente lee desde `.env` y el panel solicita al abrirse.
 
-- Mantén OpenPLC escuchando en `127.0.0.1` o en la red privada del laboratorio; no abras el puerto 502 al router.
-- Usa un broker MQTT con TLS, usuario/contraseña y ACL.
-- Configura `API_KEY` para proteger los endpoints de lectura/escritura.
-- El plan gratuito de Render sirve para prototipo: puede suspender el servicio por inactividad, reiniciarlo y no ofrece disco persistente. Para una demostración continua habrá que despertar el servicio o pasar a un plan adecuado.
-- Esta primera fase no incluye todavía ESP32, sensor virtual, histórico de datos ni agentes ML/LLM. Se dejan como capas siguientes sobre el estado y los comandos MQTT.
+## Límites de Render Free
 
-## Referencias oficiales
+Render suspende un servicio Free tras 15 minutos sin tráfico entrante. Mientras el puente está ejecutándose, sus solicitudes HTTPS periódicas llegan a Node-RED; si se apaga la PC o el puente, Node-RED puede dormir. Render también puede reiniciar el servicio y su memoria de ejecución no es persistente: al volver, el puente enviará de nuevo el estado actual. La cola de comandos pendientes se pierde si el servicio reinicia.
 
-- [Render: Web Services](https://render.com/docs/web-services)
-- [Render: Deploy for Free](https://render.com/docs/free)
-- [Node-RED: Docker](https://nodered.org/docs/getting-started/docker)
-- [PyModbus: Quick Start](https://www.pymodbus.org/docs/quick-start)
-- [EMQX Cloud: conexión MQTT sobre TLS](https://docs.emqx.com/en/cloud/latest/deployments/port_guide_serverless.html)
+## Después
+
+Más adelante se puede incorporar MQTT para el ESP32 como una conexión adicional. No hace falta para enlazar OpenPLC local con Node-RED en esta etapa.
 
